@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -224,6 +224,8 @@ class AgentResponse(BaseModel):
 class LiveKitTokenRequest(BaseModel):
     room_name: str | None = Field(default=None, min_length=1, max_length=128)
     participant_name: str | None = Field(default=None, min_length=1, max_length=128)
+    # "ambient" = Scribe only (silent listening); "ask" = Companion + Scribe together.
+    mode: Literal["ambient", "ask"] = "ambient"
 
 
 class LiveKitTokenResponse(BaseModel):

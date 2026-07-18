@@ -83,9 +83,10 @@ class MemoryManager:
         return candidates
 
     def should_store(self, candidate: MemoryCandidate) -> bool:
+        # Upper bound rejects greedy regex captures of noisy ASR (a whole paragraph).
         return (
             candidate.confidence >= 0.75
-            and len(candidate.content) >= 3
+            and 3 <= len(candidate.content) <= 240
             and candidate.kind in set(MemoryKind)
         )
 
@@ -116,14 +117,25 @@ class MemoryManager:
                         records.append(record)
         return records[:limit]
 
-    async def save(self, user_id: str, candidate: MemoryCandidate) -> MemoryRecord:
+    async def save(
+        self, user_id: str, candidate: MemoryCandidate, *, source: str = "conversation"
+    ) -> MemoryRecord:
         record = MemoryRecord(
             user_id=user_id,
             kind=candidate.kind,
             content=candidate.content,
-            metadata={"confidence": candidate.confidence, "stable": candidate.stable},
+            metadata={
+                "confidence": candidate.confidence,
+                "stable": candidate.stable,
+                "source": source,
+            },
         )
-        await self._moss.index_for_kind(candidate.kind.value).save(record.model_dump(mode="json"))
+        document = record.model_dump(mode="json")
+        # Surface time + provenance at the top level so they land in Moss metadata
+        # (see MossCloudIndex._metadata) and can be recalled/ordered chronologically.
+        document["source"] = source
+        document["observed_at"] = record.created_at.isoformat()
+        await self._moss.index_for_kind(candidate.kind.value).save(document)
         return record
 
     async def update(self, record: MemoryRecord, content: str) -> MemoryRecord:

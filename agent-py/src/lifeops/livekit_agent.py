@@ -171,6 +171,46 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
         return "I heard you. The mission is still running in the background."
 
 
+@function_tool
+async def recall_memory(context: RunContext, query: str) -> str:
+    """Look up what MyMinion remembers about the user, a person, a preference, a plan, or an
+    earlier topic. Call this whenever the user asks what you know, who someone is, about their
+    preferences or plans, or anything from the past."""
+    from lifeops.dependencies import get_moss
+    from lifeops.memory import MemoryManager
+
+    moss = get_moss()
+    # Force a fresh cloud read so recall sees facts the Scribe wrote from another process.
+    for name in ("user_profile", "preferences", "journeys", "decisions", "contacts"):
+        index = getattr(moss, name, None)
+        loaded = getattr(index, "_loaded_indexes", None)
+        remote = getattr(index, "remote_name", None)
+        if loaded is not None and remote is not None:
+            loaded.discard(remote)
+
+    lines: list[str] = []
+    for record in await MemoryManager(moss).retrieve("demo-user", query, limit=8):
+        lines.append(f"- {record.content}")
+    try:
+        for contact in await moss.contacts.search(query, limit=4, filters={"user_id": "demo-user"}):
+            identity = contact.get("identity") or contact.get("content")
+            if identity:
+                lines.append(f"- {contact.get('name')}: {identity}")
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for line in lines:
+        key = line.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(line)
+    if not unique:
+        return f"I don't have anything saved about '{query}' yet."
+    return "Here is what I remember:\n" + "\n".join(unique[:12])
+
+
 class MyMinionVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
@@ -178,18 +218,21 @@ class MyMinionVoiceAgent(Agent):
                 "You are MyMinion, a warm, smart, voice-first personal agent. Talk naturally "
                 "and keep answers concise enough to hear. For buying, travel, relationship "
                 "intelligence, or other real-world tasks, always call run_lifeops_agent so you "
-                "use current research and long-term memory. Call the tool before asking a buying "
-                "or travel follow-up because Moss may already contain the answer. If the user "
-                "names a specific product, immediately research current offers instead of asking "
-                "generic category, feature, or budget questions. Ask only one genuinely unresolved "
-                "question at a time. Trip planning in particular may take several short "
-                "back-and-forth "
+                "use current research and long-term memory. Whenever the user asks what you "
+                "know, who a person is, or about their preferences, plans, family, or anything "
+                "from earlier, ALWAYS call recall_memory first and answer from what it returns; "
+                "never say you do not know without calling recall_memory. Call run_lifeops_agent "
+                "before asking a buying or travel follow-up because Moss may already contain the "
+                "answer. If the user names a specific product, immediately research current offers "
+                "instead of asking generic category, feature, or budget questions. Ask only one "
+                "genuinely unresolved question at a time. Trip planning in particular may take "
+                "several short back-and-forth "
                 "questions — dates, flight or road, restaurants, hotel or Airbnb, budget, and "
                 "pace — before an itinerary is ready; that is expected, so keep asking one at a "
                 "time rather than guessing. Speak in English unless the user explicitly requests "
                 "another language. Never say you are a chatbot or scaffold."
             ),
-            tools=[run_lifeops_agent],
+            tools=[run_lifeops_agent, recall_memory],
             allow_interruptions=True,
         )
 

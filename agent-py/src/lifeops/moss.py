@@ -216,6 +216,13 @@ class MossCloudIndex(MossIndex[dict[str, Any]]):
             "journey_id",
             "session_id",
             "_moss_index",
+            # Time + provenance, so records can be recalled and ordered chronologically.
+            "created_at",
+            "updated_at",
+            "retrieved_at",
+            "observed_at",
+            "topic",
+            "source",
         )
         return {key: str(document[key]) for key in keys if document.get(key) is not None}
 
