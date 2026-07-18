@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
+
 from lifeops.models import MemoryCandidate, MemoryKind, MemoryRecord
 from lifeops.moss import MossClient
 
@@ -75,7 +77,11 @@ class MemoryManager:
         ):
             documents = await index.search(query, limit=limit, filters={"user_id": user_id})
             for document in documents:
-                records.append(MemoryRecord.model_validate(document))
+                try:
+                    records.append(MemoryRecord.model_validate(document))
+                except ValidationError:
+                    # Journey state shares the semantic index but is not a memory record.
+                    continue
         return records[:limit]
 
     async def save(self, user_id: str, candidate: MemoryCandidate) -> MemoryRecord:

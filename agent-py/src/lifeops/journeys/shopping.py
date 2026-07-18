@@ -3,7 +3,19 @@ from lifeops.models import JourneyKind
 
 SHOPPING = JourneyTemplate(
     kind=JourneyKind.SHOPPING,
-    triggers=("buy", "couch", "furniture", "purchase"),
+    triggers=(
+        "buy",
+        "recommend",
+        "best",
+        "compare",
+        "shopping",
+        "couch",
+        "furniture",
+        "purchase",
+        "headphones",
+        "laptop",
+        "phone",
+    ),
     tasks=(
         ("Capture requirements", "Record dimensions, style, budget, and delivery constraints."),
         ("Research options", "Find products matching hard requirements."),

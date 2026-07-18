@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Protocol
 
 from lifeops.agents.buying import BuyingAdvisor
 from lifeops.agents.contact import ContactIntelligenceAgent
 from lifeops.agents.trip import TripPlannerAgent
+from lifeops.knowledge import AgentKnowledgeRepository
 from lifeops.memory import MemoryManager
 from lifeops.models import (
     AgentRequest,
@@ -21,6 +23,10 @@ from lifeops.sessions import SessionRepository
 from lifeops.use_cases.router import UseCaseRouter
 
 
+class ConversationRuntime(Protocol):
+    async def run(self, prompt: str, tools: list[Any]) -> str: ...
+
+
 class LifeOpsAgent:
     """Main orchestration use case shared by HTTP, voice, and future workers."""
 
@@ -34,6 +40,8 @@ class LifeOpsAgent:
         buying: BuyingAdvisor | None = None,
         trip: TripPlannerAgent | None = None,
         contact: ContactIntelligenceAgent | None = None,
+        knowledge: AgentKnowledgeRepository | None = None,
+        conversation: ConversationRuntime | None = None,
     ) -> None:
         self._planner = planner
         self._memory = memory
@@ -43,6 +51,8 @@ class LifeOpsAgent:
         self._buying = buying or BuyingAdvisor()
         self._trip = trip or TripPlannerAgent()
         self._contact = contact
+        self._knowledge = knowledge
+        self._conversation = conversation
 
     async def respond(self, request: AgentRequest) -> AgentResponse:
         session = await self._sessions.get(request.session_id) or SessionState(
@@ -69,6 +79,16 @@ class LifeOpsAgent:
                 )
             )
 
+        if self._knowledge:
+            await self._knowledge.save_journey(request.user_id, journey, use_case)
+            await self._knowledge.save_recommendations(
+                request.user_id, journey.id, use_case, recommendations
+            )
+            if contact_intelligence:
+                await self._knowledge.save_contact_summary(
+                    request.user_id, request.session_id, contact_intelligence
+                )
+
         candidates = await self._memory.extract_candidate_memory(request.message)
         candidates.append(
             MemoryCandidate(
@@ -85,9 +105,32 @@ class LifeOpsAgent:
             if self._memory.should_store(candidate)
         ]
 
-        message = self._compose_response(
-            journey.goal, journey.next_action, journey.missing_information, len(memories_used)
-        )
+        if self._conversation:
+            context = {
+                "use_case": use_case.value,
+                "journey": journey.model_dump(mode="json"),
+                "research": [item.model_dump(mode="json") for item in research],
+                "recommendations": [item.model_dump(mode="json") for item in recommendations],
+                "contact_intelligence": contact_intelligence.model_dump(mode="json")
+                if contact_intelligence
+                else None,
+                "memories": [item.model_dump(mode="json") for item in memories_used],
+            }
+            history = session.conversation[-12:]
+            message = await self._conversation.run(
+                "Conversation history:\n"
+                f"{json.dumps(history, default=str)}\n\n"
+                "Completed agent work:\n"
+                f"{json.dumps(context, default=str)}\n\n"
+                "Respond naturally to the user's latest message. Do not describe yourself as "
+                "a scaffold. Ask at most one necessary follow-up question. If enough information "
+                "exists, give the useful answer now and briefly explain the next action.",
+                [],
+            )
+        else:
+            message = self._compose_response(
+                journey.goal, journey.next_action, journey.missing_information, len(memories_used)
+            )
         session.current_task_id = journey.tasks[0].id
         session.temporary_variables["journey_id"] = journey.id
         session.conversation.append({"role": "assistant", "content": message})
@@ -118,19 +161,23 @@ class LifeOpsAgent:
 class OpenAIAgentsAdapter:
     """Optional SDK boundary. Imports lazily so mock mode has no credential requirement."""
 
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, api_key: str) -> None:
         self.model = model
+        self._api_key = api_key
 
     async def run(self, prompt: str, tools: list[Any]) -> str:
         try:
-            from agents import Agent, Runner
+            from agents import Agent, Runner, set_default_openai_key
         except ImportError as error:
             raise RuntimeError("Install the 'openai' extra to enable OpenAI Agents SDK") from error
+        set_default_openai_key(self._api_key, use_for_tracing=False)
         agent = Agent(
             name="LifeOps Orchestrator",
             instructions=(
-                "Plan real-world work, retrieve durable memory, research changing facts, "
-                "and return the next concrete action."
+                "You are MyMinion, a warm, concise, voice-first personal agent. Converse "
+                "naturally while helping the user complete real-world work. Use the supplied "
+                "journey, memory, research, and specialist output as facts. Never claim you "
+                "researched something when no evidence was supplied."
             ),
             model=self.model,
             tools=tools,

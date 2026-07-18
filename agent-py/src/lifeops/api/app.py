@@ -1,13 +1,39 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from lifeops.agent import LifeOpsAgent
 from lifeops.agents.contact import ContactIntelligenceAgent
+from lifeops.config import get_settings
 from lifeops.dependencies import get_agent, get_contact_agent, get_moss
-from lifeops.models import AgentRequest, AgentResponse, ContactIntelligence, InteractionRequest
-from lifeops.moss import MossClient
+from lifeops.knowledge import MossAgentKnowledgeRepository
+from lifeops.livekit import LiveKitTokenService
+from lifeops.models import (
+    AgentRequest,
+    AgentResponse,
+    ContactIntelligence,
+    InteractionRequest,
+    LiveKitTokenRequest,
+    LiveKitTokenResponse,
+)
+from lifeops.moss import MossClient, ensure_cloud_moss_indexes
 
-app = FastAPI(title="LifeOps AI Agent API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    settings = get_settings()
+    if (
+        not settings.mock_moss
+        and settings.moss_auto_create_indexes
+        and settings.moss_project_id
+        and settings.moss_project_key
+    ):
+        await ensure_cloud_moss_indexes(settings.moss_project_id, settings.moss_project_key)
+    yield
+
+
+app = FastAPI(title="MyMinion Agent API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -19,7 +45,42 @@ app.add_middleware(
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "mock"}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "mode": "hybrid"
+        if settings.mock_bright_data != settings.mock_moss
+        else ("mock" if settings.mock_bright_data else "live"),
+        "bright_data": (
+            "mock"
+            if settings.mock_bright_data
+            else "configured"
+            if settings.bright_data_browser_ws
+            or (
+                settings.bright_data_api_key
+                and settings.bright_data_serp_zone
+                and settings.bright_data_unlocker_zone
+            )
+            else "incomplete"
+        ),
+        "moss": (
+            "mock"
+            if settings.mock_moss
+            else "configured"
+            if settings.moss_project_id and settings.moss_project_key
+            else "incomplete"
+        ),
+        "livekit": (
+            "configured"
+            if settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret
+            else "incomplete"
+        ),
+    }
+
+
+@app.post("/v1/livekit/token", response_model=LiveKitTokenResponse)
+async def create_livekit_token(request: LiveKitTokenRequest) -> LiveKitTokenResponse:
+    return LiveKitTokenService(get_settings()).issue(request)
 
 
 @app.post("/v1/agent/respond", response_model=AgentResponse)
@@ -34,16 +95,7 @@ async def analyze_interaction(
     moss: MossClient = Depends(get_moss),
 ) -> ContactIntelligence:
     intelligence = await agent.analyze(request)
-    await moss.interactions.save(
-        {
-            "user_id": request.user_id,
-            "session_id": request.session_id,
-            "transcript": request.transcript,
-            "intelligence": intelligence.model_dump(mode="json"),
-        }
+    await MossAgentKnowledgeRepository(moss).save_contact_summary(
+        request.user_id, request.session_id, intelligence
     )
-    if intelligence.name or intelligence.email or intelligence.public_profile_url:
-        await moss.contacts.save(
-            {"user_id": request.user_id, **intelligence.model_dump(mode="json")}
-        )
     return intelligence

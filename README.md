@@ -4,6 +4,21 @@ MyMinion is a voice-first personal operations agent. A user states an outcome; t
 
 The scaffold runs end to end with deterministic in-memory Moss and Bright Data adapters. No API keys are required for local development, and provider code is kept behind typed interfaces so production adapters can replace mocks without changing business logic.
 
+The primary product flows are Buying Advisor, Contact Intelligence, and Trip Planner. See
+[`INFRASTRUCTURE.md`](INFRASTRUCTURE.md) for the complete agent loops, production topology,
+data boundaries, and deployment path.
+
+Every specialist follows the same contract:
+
+```text
+route → retrieve Moss context → create journey → Bright Data research
+      → specialist evaluation → persist evidence/recommendations to Moss → next action
+```
+
+Contact enrichment never bypasses login or access controls. It uses Bright Data to discover
+public professional context and extracts a supplied public profile URL only after explicit
+consent. Prefer licensed or official provider access for production LinkedIn data.
+
 ## Architecture
 
 ```text
@@ -50,13 +65,49 @@ sequenceDiagram
 
 ### Moss
 
-`MossClient` exposes five repositories: `user_profile`, `preferences`, `journeys`, `research`, and `decisions`. Every index implements async `save`, `search`, `update`, and `delete`. `InMemoryMossIndex` is the development adapter. A real adapter should implement `MossIndex` and be injected from `dependencies.py`.
+`MossClient` exposes logical repositories for `user_profile`, `preferences`, `journeys`,
+`research`, `decisions`, `contacts`, `interactions`, and `recommendations`. Every repository
+implements async `save`, `search`, `update`, and `delete`. `InMemoryMossIndex` is the offline
+adapter; `MossCloudIndex` uses the official Python SDK and loads the cloud index locally for
+fast semantic queries.
+
+The live deployment stores the eight logical record types in one physical
+`myminion-memory` index using `_moss_index` metadata. This works with entry-level Moss index
+limits while preserving typed repository boundaries. Configure it with:
+
+```env
+USE_MOCK_MOSS=false
+MOSS_PROJECT_ID=your_project_id
+MOSS_PROJECT_KEY=your_project_key
+MOSS_AUTO_CREATE_INDEXES=true
+```
+
+The application never commits credentials. The bootstrap is idempotent and does not modify
+indexes outside the `myminion-` namespace.
 
 `MemoryManager` does not save every message. It only accepts preferences, constraints, decisions, rejection reasons, ongoing journeys, and stable profile information that pass a confidence policy.
 
 ### Bright Data
 
 `BrightDataService` defines async `search`, `extract`, and `crawl`. `MockBrightDataService` returns clearly marked deterministic evidence and never performs an API call. Implement the same interface with the Bright Data SDK/API, then swap the dependency provider.
+
+`LiveBrightDataService` supports two production configurations. A Browser API WebSocket can
+perform both rendered search and extraction. Alternatively, separate SERP and Web Unlocker
+zones can use the Direct API.
+
+```env
+USE_MOCK_SERVICES=false
+BRIGHT_DATA_API_KEY=your_generated_api_key
+BRIGHT_DATA_BROWSER_WS=wss://your-browser-api-connection
+
+# Optional Direct API alternative:
+BRIGHT_DATA_SERP_ZONE=your_serp_zone
+BRIGHT_DATA_UNLOCKER_ZONE=your_unlocker_zone
+```
+
+The API key comes from Bright Data account settings. Zone names come from each product's
+Overview page. Never commit these values. `GET /health` reports whether live Bright Data
+configuration is complete without exposing credentials.
 
 ### LiveKit
 

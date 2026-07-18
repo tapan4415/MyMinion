@@ -45,6 +45,8 @@ async def test_buying_flow_returns_ranked_recommendations() -> None:
     assert response.use_case == UseCase.BUYING
     assert len(response.recommendations) == 3
     assert response.recommendations[0].score > response.recommendations[1].score
+    stored = await get_moss().recommendations.search("Best overall", filters={"user_id": "u1"})
+    assert stored
 
 
 @pytest.mark.asyncio
@@ -54,6 +56,8 @@ async def test_trip_flow_returns_itinerary_strategy() -> None:
     )
     assert response.use_case == UseCase.TRIP_PLANNING
     assert response.recommendations[0].attributes["pace"] == "balanced"
+    stored = await get_moss().research.search("Japan", filters={"user_id": "u1"})
+    assert stored
 
 
 @pytest.mark.asyncio
@@ -69,3 +73,20 @@ async def test_contact_enrichment_requires_consent() -> None:
     assert intelligence.name == "Sarah Chen"
     assert intelligence.enrichment_status == "consent_required"
     assert intelligence.commitments == ["She will send the proposal"]
+    assert len(intelligence.provenance) == 4
+
+
+@pytest.mark.asyncio
+async def test_contact_flow_uses_bright_data_and_persists_summary_to_moss() -> None:
+    response = await get_agent().respond(
+        AgentRequest(
+            user_id="u1",
+            session_id="relationship",
+            message="I spoke with Sarah Chen at Acme. She will send the proposal.",
+        )
+    )
+    assert response.use_case == UseCase.CONTACT_INTELLIGENCE
+    assert response.contact_intelligence is not None
+    assert len(response.contact_intelligence.provenance) == 4
+    contacts = await get_moss().contacts.search("Sarah", filters={"user_id": "u1"})
+    assert contacts
