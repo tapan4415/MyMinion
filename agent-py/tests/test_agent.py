@@ -1,7 +1,16 @@
 import pytest
 
+from lifeops.agents.buying import BuyingAdvisor
 from lifeops.dependencies import get_agent, get_contact_agent, get_moss
-from lifeops.models import AgentRequest, InteractionRequest, JourneyKind, UseCase
+from lifeops.models import (
+    AgentRequest,
+    InteractionRequest,
+    Journey,
+    JourneyKind,
+    JourneyTask,
+    ResearchResult,
+    UseCase,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -38,15 +47,61 @@ async def test_memory_is_available_on_later_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_buying_flow_returns_ranked_recommendations() -> None:
+async def test_buying_flow_does_not_fabricate_unpriced_recommendations() -> None:
     response = await get_agent().respond(
         AgentRequest(user_id="u1", session_id="buy", message="Recommend a couch under $1500")
     )
     assert response.use_case == UseCase.BUYING
-    assert len(response.recommendations) == 3
-    assert response.recommendations[0].score > response.recommendations[1].score
-    stored = await get_moss().recommendations.search("Best overall", filters={"user_id": "u1"})
-    assert stored
+    assert response.recommendations == []
+
+
+@pytest.mark.asyncio
+async def test_verified_retailer_offers_are_ranked_by_dollar_price() -> None:
+    journey = Journey(
+        goal="Find Apple AirPods under $400",
+        kind=JourneyKind.SHOPPING,
+        tasks=[JourneyTask(title="Compare offers", description="Compare verified prices")],
+        next_action="Compare approved retailers",
+    )
+    evidence = [
+        ResearchResult(
+            source="https://www.bestbuy.com/site/airpods/123.p",
+            title="Apple AirPods",
+            summary="Verified page",
+            confidence=0.9,
+            raw={
+                "price": "$179.99",
+                "serp_title": "AirPods at Best Buy",
+                "verified_product_page": True,
+            },
+        ),
+        ResearchResult(
+            source="https://www.apple.com/shop/buy-airpods/airpods-pro-2",
+            title="AirPods Pro",
+            summary="Verified page",
+            confidence=0.9,
+            raw={
+                "price": "$249.00",
+                "serp_title": "AirPods Pro at Apple",
+                "verified_product_page": True,
+            },
+        ),
+        ResearchResult(
+            source="https://www.amazon.com/airpods/dp/example",
+            title="AirPods accessory price",
+            summary="Navigation price incorrectly exposed as a product offer",
+            confidence=0.9,
+            raw={
+                "price": "$10.00",
+                "serp_title": "AirPods at Amazon",
+                "verified_product_page": True,
+            },
+        ),
+    ]
+    recommendations = await BuyingAdvisor().recommend(journey, evidence)
+    assert [item.attributes["price"] for item in recommendations] == [179.99, 249.0]
+    assert [item.attributes["retailer"] for item in recommendations] == ["Best Buy", "Apple"]
+    assert recommendations[0].score > recommendations[1].score
 
 
 @pytest.mark.asyncio
@@ -79,7 +134,10 @@ async def test_natural_priority_language_is_recalled_for_later_shopping() -> Non
             ),
         )
     )
-    assert len([memory for memory in first.memories_saved if memory.kind.value == "preference"]) == 2
+    saved_preferences = [
+        memory for memory in first.memories_saved if memory.kind.value == "preference"
+    ]
+    assert len(saved_preferences) == 2
 
     second = await agent.respond(
         AgentRequest(

@@ -91,19 +91,29 @@ class MemoryManager:
 
     async def retrieve(self, user_id: str, query: str, *, limit: int = 10) -> list[MemoryRecord]:
         records: list[MemoryRecord] = []
+        seen: set[str] = set()
         for index in (
             self._moss.user_profile,
             self._moss.preferences,
             self._moss.journeys,
             self._moss.decisions,
         ):
-            documents = await index.search(query, limit=limit, filters={"user_id": user_id})
-            for document in documents:
-                try:
-                    records.append(MemoryRecord.model_validate(document))
-                except ValidationError:
-                    # Journey state shares the semantic index but is not a memory record.
-                    continue
+            queries = [query]
+            if index is self._moss.preferences:
+                queries.append("shopping budget price constraint preferences priorities")
+            for semantic_query in queries:
+                documents = await index.search(
+                    semantic_query, limit=limit, filters={"user_id": user_id}
+                )
+                for document in documents:
+                    try:
+                        record = MemoryRecord.model_validate(document)
+                    except ValidationError:
+                        # Journey state shares the semantic index but is not a memory record.
+                        continue
+                    if record.id not in seen:
+                        seen.add(record.id)
+                        records.append(record)
         return records[:limit]
 
     async def save(self, user_id: str, candidate: MemoryCandidate) -> MemoryRecord:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, RunContext, function_tool
@@ -9,7 +10,8 @@ from livekit.plugins.openai.realtime.realtime_model import TurnDetection
 
 from lifeops.agent import LifeOpsAgent
 from lifeops.config import get_settings
-from lifeops.dependencies import get_agent
+from lifeops.dependencies import get_agent, get_moss
+from lifeops.memory import MemoryManager
 from lifeops.models import AgentRequest
 
 
@@ -28,16 +30,35 @@ class LiveKitVoiceBridge:
 async def run_lifeops_agent(context: RunContext, request: str) -> str:
     """Plan and research a real-world request using MyMinion's memory and specialist agents."""
     room_name = context.session.room_io.room.name if context.session.room_io else "voice"
+    recalled = await MemoryManager(get_moss()).retrieve("demo-user", request)
+    recalled_details = [
+        f"{memory.kind.value.replace('_', ' ')}: {memory.content}" for memory in recalled[:5]
+    ]
     if context.session.room_io:
         try:
             await context.session.room_io.room.local_participant.publish_data(
-                '{"stage":"Retrieving memory and researching current sources"}',
+                json.dumps(
+                    {
+                        "stage": (
+                            f"Moss recalled {len(recalled_details)} memories; "
+                            "researching approved retailers"
+                            if recalled_details
+                            else "No matching Moss memory; researching approved retailers"
+                        ),
+                        "memories": recalled_details,
+                    }
+                ),
                 reliable=True,
                 topic="myminion.progress",
             )
         except Exception:
             pass
-    await context.update("I’m checking your preferences and researching the best next step.")
+    await context.update(
+        "I found your saved preferences and I’m checking Apple, Amazon, Best Buy, "
+        "Walmart, and Target."
+        if recalled_details
+        else "I’m checking Apple, Amazon, Best Buy, Walmart, and Target for verified offers."
+    )
 
     async def complete_mission() -> str:
         response = await get_agent().respond(
@@ -90,7 +111,8 @@ class MyMinionVoiceAgent(Agent):
                 "or travel follow-up because Moss may already contain the answer. If the user "
                 "names a specific product, immediately research current offers instead of asking "
                 "generic category, feature, or budget questions. Ask only one genuinely unresolved "
-                "question at a time. Trip planning in particular may take several short back-and-forth "
+                "question at a time. Trip planning in particular may take several short "
+                "back-and-forth "
                 "questions — dates, flight or road, restaurants, hotel or Airbnb, budget, and "
                 "pace — before an itinerary is ready; that is expected, so keep asking one at a "
                 "time rather than guessing. Speak in English unless the user explicitly requests "

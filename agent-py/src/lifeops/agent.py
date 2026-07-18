@@ -151,7 +151,10 @@ class LifeOpsAgent:
                 "conversationally and do not invent an itinerary yet. If itinerary is present, "
                 "briefly summarize the day-by-day plan and mention the budget status. Otherwise "
                 "ask at most one necessary follow-up question. If enough information exists, "
-                "give the useful answer now and briefly explain the next action.",
+                "give the useful answer now and briefly explain the next action. For a buying "
+                "mission, only call something an offer or quote a price when it appears in the "
+                "recommendations list. If recommendations is empty, say that no verified priced "
+                "offers were found; never turn raw research text into recommendations.",
                 [],
             )
         elif pending_questions:

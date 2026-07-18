@@ -44,3 +44,20 @@ async def test_live_search_requires_serp_zone() -> None:
     with pytest.raises(BrightDataError, match="SERP_ZONE"):
         await service.search("test")
     await service.close()
+
+
+def test_page_price_prefers_structured_product_offer() -> None:
+    price = LiveBrightDataService._page_price(
+        [],
+        [
+            json.dumps(
+                {
+                    "@type": "Product",
+                    "name": "Apple AirPods 4",
+                    "offers": {"@type": "Offer", "price": "129.99"},
+                }
+            )
+        ],
+        "AirPods 4 with financing from $30.99",
+    )
+    assert price == "$129.99"
