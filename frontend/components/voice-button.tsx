@@ -25,6 +25,7 @@ export function VoiceButton({
   const [progress, setProgress] = useState("");
   const [progressMemories, setProgressMemories] = useState<string[]>([]);
   const [connectionError, setConnectionError] = useState("");
+  const [missionError, setMissionError] = useState("");
   const [muted, setMuted] = useState(false);
   const [voiceResult, setVoiceResult] = useState<AgentResponse | null>(null);
 
@@ -45,6 +46,7 @@ export function VoiceButton({
     }
     setBusy(true);
     setConnectionError("");
+    setMissionError("");
     try {
       const response = await fetch("/api/livekit/token", {
         method: "POST",
@@ -88,7 +90,7 @@ export function VoiceButton({
       });
       room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
         try {
-          const data = JSON.parse(new TextDecoder().decode(payload)) as AgentResponse & { stage?: string; memories?: string[] };
+          const data = JSON.parse(new TextDecoder().decode(payload)) as AgentResponse & { stage?: string; memories?: string[]; error?: string; retrying?: boolean };
           if (topic === "myminion.progress") {
             setProgress(data.stage ?? "Working on it");
             setProgressMemories(
@@ -97,8 +99,13 @@ export function VoiceButton({
           }
           if (topic === "myminion.agent_result") {
             setProgress("Results ready");
+            setMissionError("");
             setVoiceResult(data);
             onResult?.(data);
+          }
+          if (topic === "myminion.error") {
+            setProgress(data.stage ?? "Mission error");
+            setMissionError(data.error ?? "A provider failed");
           }
         } catch { /* Ignore malformed third-party packets. */ }
       });
@@ -119,6 +126,7 @@ export function VoiceButton({
         setSpeaker("idle");
         setProgress("");
         setProgressMemories([]);
+        setMissionError("");
       });
       await room.connect(credentials.server_url, credentials.participant_token);
       await room.startAudio();
@@ -168,6 +176,7 @@ export function VoiceButton({
         <p className="mt-8 text-[15px] font-medium text-zinc-600">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening…"}</p>
         <p className="mt-2 text-center text-[11px] text-zinc-400">You can interrupt naturally. Once captured, your mission keeps running.</p>
         {progress && <p className="mt-3 rounded-full bg-indigo-50 px-4 py-2 text-xs text-indigo-600">{progress}</p>}
+        {missionError && <div role="alert" className="mt-3 max-w-xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center"><p className="text-xs font-black text-amber-800">{missionError}</p><p className="mt-1 text-[10px] text-amber-700">{progress.toLowerCase().includes("retry") ? "MyMinion is retrying automatically." : "The complete retry also failed. You can start the mission again."}</p></div>}
         {progressMemories.length > 0 && !voiceResult && <div className="mt-3 flex max-w-xl flex-wrap justify-center gap-2">{progressMemories.map((memory, index) => <span key={`${index}-${memory}`} className="rounded-full border border-[#ead66c] bg-[#fff9d9] px-3 py-1.5 text-[10px] font-bold text-[#675400]">Moss → {memory}</span>)}</div>}
         <div className="mt-8 max-h-[28vh] w-full max-w-2xl space-y-3 overflow-y-auto px-4 text-center">
           {transcript.length === 0 ? <p className="text-sm text-zinc-400">Start speaking. Your live transcript will appear here.</p> : transcript.slice(-5).map(line => <div key={line.id}><p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{line.role === "user" ? "You" : "MyMinion"}</p><p className={`mt-1 text-[15px] leading-6 ${line.final ? "text-zinc-700" : "text-zinc-400"}`}>{line.text}</p></div>)}

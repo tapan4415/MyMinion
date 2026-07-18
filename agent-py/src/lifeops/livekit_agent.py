@@ -12,7 +12,7 @@ from lifeops.agent import LifeOpsAgent
 from lifeops.config import get_settings
 from lifeops.dependencies import get_agent, get_moss
 from lifeops.memory import MemoryManager
-from lifeops.models import AgentRequest
+from lifeops.models import AgentRequest, UseCase
 
 
 class LiveKitVoiceBridge:
@@ -61,24 +61,63 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
     )
 
     async def complete_mission() -> str:
-        response = await get_agent().respond(
-            AgentRequest(
-                user_id="demo-user",
-                session_id=f"voice-{room_name}",
-                message=request,
-            )
-        )
-        if context.session.room_io:
+        async def publish(topic: str, payload: str) -> None:
+            if not context.session.room_io:
+                return
             try:
                 await context.session.room_io.room.local_participant.publish_data(
-                    response.model_dump_json(),
+                    payload,
                     reliable=True,
-                    topic="myminion.agent_result",
+                    topic=topic,
                 )
             except Exception:
-                # Moss persistence has already completed; a closed room must not undo the work.
                 pass
-        return response.message
+
+        last_error = "No verified priced offers were returned"
+        for attempt in range(1, 3):
+            if attempt > 1:
+                await publish(
+                    "myminion.error",
+                    json.dumps(
+                        {
+                            "stage": f"Retrying the complete mission ({attempt}/2)",
+                            "error": last_error,
+                            "retrying": True,
+                        }
+                    ),
+                )
+            try:
+                response = await get_agent().respond(
+                    AgentRequest(
+                        user_id="demo-user",
+                        session_id=f"voice-{room_name}-attempt-{attempt}",
+                        message=request,
+                    )
+                )
+                incomplete_buying = (
+                    response.use_case == UseCase.BUYING and not response.recommendations
+                )
+                if incomplete_buying and attempt < 2:
+                    last_error = "Approved retailers returned no verified dollar-priced offers"
+                    continue
+                await publish("myminion.agent_result", response.model_dump_json())
+                return response.message
+            except Exception as error:
+                last_error = f"{type(error).__name__}: provider mission failed"
+                if attempt < 2:
+                    continue
+
+        await publish(
+            "myminion.error",
+            json.dumps(
+                {
+                    "stage": "Mission failed after automatic retry",
+                    "error": last_error,
+                    "retrying": False,
+                }
+            ),
+        )
+        return f"I couldn’t complete the mission after retrying. {last_error}."
 
     # The mission is intentionally independent of the current speech turn. A user can
     # interrupt the voice response without cancelling research or Moss persistence.
