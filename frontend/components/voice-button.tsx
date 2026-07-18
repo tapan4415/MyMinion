@@ -13,9 +13,11 @@ type TranscriptLine = { id: string; role: "user" | "agent"; text: string; final:
 export function VoiceButton({
   onResult,
   onTranscript,
+  mode = "ask",
 }: {
   onResult?: (result: AgentResponse) => void;
   onTranscript?: (line: TranscriptLine) => void;
+  mode?: "ambient" | "ask";
 }) {
   const roomRef = useRef<Room | null>(null);
   const [connected, setConnected] = useState(false);
@@ -28,6 +30,7 @@ export function VoiceButton({
   const [missionError, setMissionError] = useState("");
   const [muted, setMuted] = useState(false);
   const [voiceResult, setVoiceResult] = useState<AgentResponse | null>(null);
+  const [scribe, setScribe] = useState<{ heard: string; saved: number; researched: number } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -55,7 +58,7 @@ export function VoiceButton({
       const response = await fetch("/api/livekit/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participant_name: "Web user" }),
+        body: JSON.stringify({ participant_name: "Web user", mode }),
       });
       if (!response.ok) throw new Error("Unable to start voice");
       const credentials = (await response.json()) as TokenResponse;
@@ -109,6 +112,9 @@ export function VoiceButton({
             setVoiceResult(data);
             onResult?.(data);
           }
+          if (topic === "myminion.scribe") {
+            setScribe(data as unknown as { heard: string; saved: number; researched: number });
+          }
           if (topic === "myminion.error") {
             setProgress(data.stage ?? "Mission error");
             setMissionError(data.error ?? "A provider failed");
@@ -131,6 +137,7 @@ export function VoiceButton({
         setConnected(false);
         setSpeaker("idle");
         setProgress("");
+        setScribe(null);
         setProgressMemories([]);
         setMissionError("");
       });
@@ -173,7 +180,7 @@ export function VoiceButton({
     </Button>
     {connectionError && <p role="alert" className="absolute bottom-[-26px] right-2 text-[10px] font-semibold text-red-600">{connectionError}</p>}
     {connected && <div className="fixed inset-0 z-50 flex flex-col bg-[#fbfbfc] text-zinc-900">
-      <header className="flex h-20 items-center justify-between px-6"><div className="flex items-center gap-3 text-sm font-black"><span className="minion-face size-9"/> Voice mission</div><button onClick={() => void toggleVoice()} className="grid size-10 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"><X size={18}/></button></header>
+      <header className="flex h-20 items-center justify-between px-6"><div className="flex items-center gap-3 text-sm font-black"><span className="minion-face size-9"/> {mode === "ambient" ? "Listening mode" : "Voice mission"} <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><span className="size-1.5 animate-pulse rounded-full bg-red-500"/> Scribe listening</span></div><button onClick={() => void toggleVoice()} className="grid size-10 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"><X size={18}/></button></header>
       <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-8 overflow-y-auto px-6 pb-4 lg:grid-cols-[1fr_380px] lg:items-center">
         <div className="flex flex-col items-center justify-center">
         <div className={`minion-orb relative size-48 overflow-hidden rounded-full transition-all duration-500 sm:size-56 ${speaker === "agent" ? "opacity-100" : speaker === "user" ? "opacity-90" : "opacity-75"}`}>
@@ -182,6 +189,7 @@ export function VoiceButton({
         <p className="mt-8 text-[15px] font-medium text-zinc-600">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening…"}</p>
         <p className="mt-2 text-center text-[11px] text-zinc-400">You can interrupt naturally. Once captured, your mission keeps running.</p>
         {progress && <p className="mt-3 rounded-full bg-indigo-50 px-4 py-2 text-xs text-indigo-600">{progress}</p>}
+        {scribe && <p className="mt-3 max-w-md rounded-full bg-emerald-50 px-4 py-2 text-center text-xs text-emerald-700">Scribe noted &ldquo;{scribe.heard.slice(0, 60)}{scribe.heard.length > 60 ? "…" : ""}&rdquo; · saved {scribe.saved} · researched {scribe.researched}</p>}
         {missionError && <div role="alert" className="mt-3 max-w-xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center"><p className="text-xs font-black text-amber-800">{missionError}</p><p className="mt-1 text-[10px] text-amber-700">{progress.toLowerCase().includes("retry") ? "MyMinion is retrying automatically." : "The complete retry also failed. You can start the mission again."}</p></div>}
         {progressMemories.length > 0 && !voiceResult && <div className="mt-3 flex max-w-xl flex-wrap justify-center gap-2">{progressMemories.map((memory, index) => <span key={`${index}-${memory}`} className="rounded-full border border-[#ead66c] bg-[#fff9d9] px-3 py-1.5 text-[10px] font-bold text-[#675400]">Moss → {memory}</span>)}</div>}
         <div className="mt-8 max-h-[28vh] w-full max-w-2xl space-y-3 overflow-y-auto px-4 text-center">

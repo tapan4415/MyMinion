@@ -96,8 +96,9 @@ export default function Chat() {
         <header className="flex h-16 shrink-0 items-center border-b border-[#eee6b8] px-4 sm:px-6">
           <button onClick={newChat} className="flex items-center gap-3 text-left"><span className="minion-face size-9"/><span><span className="block text-sm font-black">Mission Control</span><span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">MyMinion</span></span></button>
           <span className="ml-4 rounded-full bg-[#fff078] px-2.5 py-1 text-[10px] font-bold text-[#725b00]">3 specialists ready</span>
-          <div className="ml-auto flex items-center gap-2 text-xs text-zinc-500">
-            <span className="size-2 rounded-full bg-emerald-400"/> Voice ready
+          <div className="ml-auto flex items-center gap-3 text-xs text-zinc-500">
+            <span className="hidden items-center gap-1 sm:flex"><span className="size-2 rounded-full bg-emerald-400"/> Voice ready</span>
+            <div className="flex items-center gap-2"><span className="hidden text-[11px] font-semibold text-zinc-600 sm:inline">Listen mode</span><VoiceButton mode="ambient"/></div>
           </div>
         </header>
 
@@ -133,7 +134,7 @@ export default function Chat() {
                 <textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} rows={1} placeholder="Give your minions a mission…" className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-2 py-3 text-[17px] text-zinc-800 outline-none placeholder:text-zinc-400"/>
                 <span className="hidden text-sm text-zinc-400 sm:block">Instant</span>
                 <Mic size={21} className="mx-1 hidden text-zinc-800 sm:block"/>
-                <VoiceButton onResult={setActiveResult} onTranscript={keepVoiceTranscript}/>
+                <VoiceButton mode="ask" onResult={setActiveResult} onTranscript={keepVoiceTranscript}/>
                 {input.trim() && <Button type="submit" size="icon" disabled={loading} className="size-10 shrink-0 rounded-full bg-black text-white hover:bg-zinc-800"><ArrowUp size={17}/></Button>}
               </form>
               <p className="mt-2 text-center text-[10px] text-zinc-700">MyMinion researches current sources and may ask before taking consequential actions.</p>
