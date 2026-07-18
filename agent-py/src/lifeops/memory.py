@@ -24,6 +24,18 @@ class MemoryManager:
             True,
         ),
         (
+            MemoryKind.PREFERENCE,
+            re.compile(
+                r"\b(?:i care about|important to me (?:is|are)|i value)\s+(.+)", re.I
+            ),
+            True,
+        ),
+        (
+            MemoryKind.PREFERENCE,
+            re.compile(r"\b((?:[^.]+?)\s+matters?\s+more\s+than\s+(?:[^.]+))", re.I),
+            True,
+        ),
+        (
             MemoryKind.CONSTRAINT,
             re.compile(
                 r"\b(?:my budget is|i cannot|i can't|must be|need to stay under)\s+(.+)", re.I

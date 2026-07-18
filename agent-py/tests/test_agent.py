@@ -67,6 +67,33 @@ async def test_buying_phrase_builds_budget_and_call_quality_persona() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_priority_language_is_recalled_for_later_shopping() -> None:
+    agent = get_agent()
+    first = await agent.respond(
+        AgentRequest(
+            user_id="priority-user",
+            session_id="persona",
+            message=(
+                "I care about excellent microphone quality. "
+                "Comfort matters more than heavy bass."
+            ),
+        )
+    )
+    assert len([memory for memory in first.memories_saved if memory.kind.value == "preference"]) == 2
+
+    second = await agent.respond(
+        AgentRequest(
+            user_id="priority-user",
+            session_id="airpods",
+            message="Find the best Apple AirPods deal for me",
+        )
+    )
+    recalled = " ".join(memory.content.lower() for memory in second.memories_used)
+    assert "microphone quality" in recalled
+    assert "comfort matters more than heavy bass" in recalled
+
+
+@pytest.mark.asyncio
 async def test_trip_flow_asks_for_missing_slots_before_building_itinerary() -> None:
     response = await get_agent().respond(
         AgentRequest(user_id="u1", session_id="trip", message="Plan a trip to Japan")

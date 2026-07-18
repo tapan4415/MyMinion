@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 
 from lifeops.buywise import BuywiseClient
-from lifeops.models import Journey, Recommendation, ResearchResult
+from lifeops.models import Journey, MemoryRecord, Recommendation, ResearchResult
 
 
 class BuyingAdvisor:
@@ -13,12 +13,19 @@ class BuyingAdvisor:
         self._buywise = buywise
 
     async def recommend(
-        self, journey: Journey, evidence: list[ResearchResult]
+        self,
+        journey: Journey,
+        evidence: list[ResearchResult],
+        memories: list[MemoryRecord] | None = None,
     ) -> list[Recommendation]:
         if self._buywise:
             try:
+                memory_context = "; ".join(memory.content for memory in (memories or [])[:8])
+                query = journey.goal
+                if memory_context:
+                    query = f"{query}. Personalize using recalled preferences: {memory_context}"
                 result = await self._buywise.investigate(
-                    journey.goal,
+                    query,
                     [item.source for item in evidence if item.source.startswith("http")],
                 )
                 offers = result.get("offers") or []

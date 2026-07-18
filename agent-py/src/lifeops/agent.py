@@ -78,7 +78,7 @@ class LifeOpsAgent:
         itinerary: TripItinerary | None = None
         pending_questions: list[str] = []
         if use_case == UseCase.BUYING:
-            recommendations = await self._buying.recommend(journey, research)
+            recommendations = await self._buying.recommend(journey, research, memories_used)
         elif use_case == UseCase.TRIP_PLANNING:
             slots = await self._trip_slots.resolve(request.user_id, session, request.message)
             missing = self._trip_slots.missing_fields(slots)

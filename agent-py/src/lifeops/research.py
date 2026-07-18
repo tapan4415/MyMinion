@@ -1,3 +1,5 @@
+import asyncio
+
 from lifeops.brightdata import BrightDataError, BrightDataService
 from lifeops.models import Journey, ResearchResult
 from lifeops.moss import MossClient
@@ -9,18 +11,33 @@ class ResearchManager:
         self._moss = moss
 
     async def research_journey(
-        self, user_id: str, journey: Journey, *, limit: int = 3
+        self, user_id: str, journey: Journey, *, limit: int = 5
     ) -> list[ResearchResult]:
-        query = f"{journey.goal} {journey.next_action}"
+        queries = [f"{journey.goal} {journey.next_action}"]
         if journey.kind.value == "shopping":
-            query = (
-                f"{journey.goal} buy price "
-                "site:bestbuy.com OR site:amazon.com OR site:walmart.com OR site:target.com"
-            )
-        try:
-            documents = await self._bright_data.search(query, limit=max(limit, 5))
-        except BrightDataError:
-            documents = []
+            queries = [
+                f"{journey.goal} buy price deals availability",
+                f"{journey.goal} official specifications model comparison",
+                f"{journey.goal} retailer price Amazon Best Buy Walmart Target Costco B&H",
+            ]
+
+        async def search(query: str):
+            try:
+                return await self._bright_data.search(query, limit=max(limit, 6))
+            except BrightDataError:
+                return []
+
+        batches = await asyncio.gather(*(search(query) for query in queries))
+        documents = []
+        seen: set[str] = set()
+        for batch in batches:
+            for document in batch:
+                if not document.url or document.url in seen:
+                    continue
+                seen.add(document.url)
+                documents.append(document)
+                if len(documents) >= 18:
+                    break
         results = [
             ResearchResult(
                 source=doc.url,
