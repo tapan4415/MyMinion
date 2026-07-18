@@ -15,11 +15,14 @@ from lifeops.models import (
     MemoryCandidate,
     MemoryKind,
     SessionState,
+    TripItinerary,
     UseCase,
 )
 from lifeops.planner import Planner
 from lifeops.research import ResearchManager
 from lifeops.sessions import SessionRepository
+from lifeops.trip_research import TripResearchService
+from lifeops.trip_slots import TripSlotService
 from lifeops.use_cases.router import UseCaseRouter
 
 
@@ -36,6 +39,8 @@ class LifeOpsAgent:
         memory: MemoryManager,
         research: ResearchManager,
         sessions: SessionRepository,
+        trip_slots: TripSlotService,
+        trip_research: TripResearchService,
         router: UseCaseRouter | None = None,
         buying: BuyingAdvisor | None = None,
         trip: TripPlannerAgent | None = None,
@@ -47,6 +52,8 @@ class LifeOpsAgent:
         self._memory = memory
         self._research = research
         self._sessions = sessions
+        self._trip_slots = trip_slots
+        self._trip_research = trip_research
         self._router = router or UseCaseRouter()
         self._buying = buying or BuyingAdvisor()
         self._trip = trip or TripPlannerAgent()
@@ -62,14 +69,27 @@ class LifeOpsAgent:
 
         memories_used = await self._memory.retrieve(request.user_id, request.message)
         use_case = await self._router.route(request.message)
+        if use_case == UseCase.GENERAL and self._trip_slots.has_pending(session):
+            use_case = UseCase.TRIP_PLANNING
         journey = await self._planner.create_journey(request.message)
         research = await self._research.research_journey(request.user_id, journey)
         recommendations = []
         contact_intelligence = None
+        itinerary: TripItinerary | None = None
+        pending_questions: list[str] = []
         if use_case == UseCase.BUYING:
             recommendations = await self._buying.recommend(journey, research)
         elif use_case == UseCase.TRIP_PLANNING:
-            recommendations = await self._trip.recommend(journey, research)
+            slots = await self._trip_slots.resolve(request.user_id, session, request.message)
+            missing = self._trip_slots.missing_fields(slots)
+            if missing:
+                question = self._trip_slots.next_question(missing)
+                pending_questions = [question] if question else []
+            else:
+                trip_evidence = await self._trip_research.research(request.user_id, journey, slots)
+                research = research + trip_evidence
+                recommendations = await self._trip.recommend(journey, trip_evidence, slots)
+                itinerary = await self._trip.build_itinerary(journey, trip_evidence, slots)
         elif use_case == UseCase.CONTACT_INTELLIGENCE and self._contact:
             contact_intelligence = await self._contact.analyze(
                 InteractionRequest(
@@ -88,6 +108,8 @@ class LifeOpsAgent:
                 await self._knowledge.save_contact_summary(
                     request.user_id, request.session_id, contact_intelligence
                 )
+            if itinerary:
+                await self._knowledge.save_trip_itinerary(request.user_id, itinerary)
 
         candidates = await self._memory.extract_candidate_memory(request.message)
         candidates.append(
@@ -115,6 +137,8 @@ class LifeOpsAgent:
                 if contact_intelligence
                 else None,
                 "memories": [item.model_dump(mode="json") for item in memories_used],
+                "pending_questions": pending_questions,
+                "itinerary": itinerary.model_dump(mode="json") if itinerary else None,
             }
             history = session.conversation[-12:]
             message = await self._conversation.run(
@@ -123,10 +147,17 @@ class LifeOpsAgent:
                 "Completed agent work:\n"
                 f"{json.dumps(context, default=str)}\n\n"
                 "Respond naturally to the user's latest message. Do not describe yourself as "
-                "a scaffold. Ask at most one necessary follow-up question. If enough information "
-                "exists, give the useful answer now and briefly explain the next action.",
+                "a scaffold. If pending_questions is non-empty, ask exactly that one question "
+                "conversationally and do not invent an itinerary yet. If itinerary is present, "
+                "briefly summarize the day-by-day plan and mention the budget status. Otherwise "
+                "ask at most one necessary follow-up question. If enough information exists, "
+                "give the useful answer now and briefly explain the next action.",
                 [],
             )
+        elif pending_questions:
+            message = pending_questions[0]
+        elif itinerary:
+            message = self._compose_itinerary_message(itinerary)
         else:
             message = self._compose_response(
                 journey.goal, journey.next_action, journey.missing_information, len(memories_used)
@@ -144,6 +175,21 @@ class LifeOpsAgent:
             use_case=use_case,
             recommendations=recommendations,
             contact_intelligence=contact_intelligence,
+            itinerary=itinerary,
+            pending_questions=pending_questions,
+        )
+
+    @staticmethod
+    def _compose_itinerary_message(itinerary: TripItinerary) -> str:
+        budget_note = {
+            "under": "within your budget",
+            "near": "close to your budget",
+            "over": "above your budget",
+            "unknown": "with pricing still to confirm",
+        }[itinerary.budget_status]
+        return (
+            f"Here's a {len(itinerary.days)}-day itinerary for {itinerary.slots.destination}, "
+            f"{budget_note}. I'll refine it further as we lock in bookings."
         )
 
     @staticmethod

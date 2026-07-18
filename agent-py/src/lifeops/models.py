@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -45,6 +45,18 @@ class UseCase(StrEnum):
     CONTACT_INTELLIGENCE = "contact_intelligence"
     TRIP_PLANNING = "trip_planning"
     GENERAL = "general"
+
+
+class TripTransportMode(StrEnum):
+    FLIGHT = "flight"
+    ROAD = "road"
+    EITHER = "either"
+
+
+class TripAccommodationType(StrEnum):
+    HOTEL = "hotel"
+    AIRBNB = "airbnb"
+    EITHER = "either"
 
 
 class JourneyTask(BaseModel):
@@ -104,6 +116,61 @@ class Recommendation(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+class TripSlots(BaseModel):
+    """Facts the trip planner needs before it can build an itinerary."""
+
+    REQUIRED_FIELDS: ClassVar[tuple[str, ...]] = (
+        "destination",
+        "duration_days",
+        "transport_mode",
+        "accommodation_type",
+        "budget",
+        "food_preferences",
+        "pace_preferences",
+    )
+
+    destination: str | None = None
+    origin: str | None = None
+    travelers: int | None = None
+    duration_days: int | None = None
+    start_date: str | None = None
+    transport_mode: TripTransportMode | None = None
+    accommodation_type: TripAccommodationType | None = None
+    budget: float | None = None
+    budget_currency: str = "USD"
+    food_preferences: list[str] = Field(default_factory=list)
+    pace_preferences: list[str] = Field(default_factory=list)
+
+    def missing_fields(self) -> list[str]:
+        missing = []
+        for field in self.REQUIRED_FIELDS:
+            value = getattr(self, field)
+            if value in (None, "", []):
+                missing.append(field)
+        return missing
+
+
+class TripItineraryDay(BaseModel):
+    day_number: int
+    focus: str
+    transport: str | None = None
+    lodging: str | None = None
+    meals: list[str] = Field(default_factory=list)
+    activities: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class TripItinerary(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex[:12])
+    journey_id: str
+    slots: TripSlots
+    days: list[TripItineraryDay]
+    estimated_total_cost: float | None = None
+    budget_status: str = "unknown"
+    evidence_ids: list[str] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class ContactIntelligence(BaseModel):
     name: str | None = None
     company: str | None = None
@@ -150,6 +217,8 @@ class AgentResponse(BaseModel):
     use_case: UseCase = UseCase.GENERAL
     recommendations: list[Recommendation] = Field(default_factory=list)
     contact_intelligence: ContactIntelligence | None = None
+    itinerary: TripItinerary | None = None
+    pending_questions: list[str] = Field(default_factory=list)
 
 
 class LiveKitTokenRequest(BaseModel):

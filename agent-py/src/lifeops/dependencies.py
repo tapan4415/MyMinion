@@ -10,6 +10,8 @@ from lifeops.moss import MossClient, create_cloud_moss_client
 from lifeops.planner import RuleBasedPlanner
 from lifeops.research import ResearchManager
 from lifeops.sessions import InMemorySessionRepository
+from lifeops.trip_research import TripResearchService
+from lifeops.trip_slots import TripSlotService
 
 
 @lru_cache
@@ -48,6 +50,8 @@ def get_agent() -> LifeOpsAgent:
         memory=MemoryManager(moss),
         research=ResearchManager(bright_data, moss),
         sessions=InMemorySessionRepository(),
+        trip_slots=TripSlotService(moss),
+        trip_research=TripResearchService(bright_data, moss),
         contact=ContactIntelligenceAgent(bright_data),
         knowledge=MossAgentKnowledgeRepository(moss),
         conversation=OpenAIAgentsAdapter(settings.openai_model, settings.openai_api_key)
