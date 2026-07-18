@@ -26,6 +26,23 @@ async def test_trip_planning_asks_one_question_at_a_time() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bare_destination_reply_is_accepted() -> None:
+    """Regression test: a bare place name answering "Where would you like to go?"
+    (e.g. voice STT transcribing "Lake Tahoe") must not be asked again forever —
+    it doesn't match any trigger-phrase pattern, so it needs the fallback path."""
+    agent = get_agent()
+    first = await agent.respond(
+        AgentRequest(user_id="u-trip-bare", session_id="trip-bare", message="Plan a weekend trip")
+    )
+    assert first.pending_questions == ["Where would you like to go?"]
+
+    second = await agent.respond(
+        AgentRequest(user_id="u-trip-bare", session_id="trip-bare", message="Lake Tahoe")
+    )
+    assert second.pending_questions != ["Where would you like to go?"]
+
+
+@pytest.mark.asyncio
 async def test_trip_planning_builds_itinerary_once_all_slots_are_answered() -> None:
     agent = get_agent()
     user_id, session_id = "u-trip-2", "trip-2"
@@ -90,6 +107,46 @@ async def test_durable_preference_is_reused_without_being_asked_again() -> None:
     # The pace question was answered from memory, so it was never asked directly.
     assert response.itinerary.slots.transport_mode == TripTransportMode.ROAD
     assert response.itinerary.slots.accommodation_type == TripAccommodationType.AIRBNB
+
+
+@pytest.mark.asyncio
+async def test_trip_specific_facts_do_not_leak_from_a_matched_preference_document() -> None:
+    """Regression test: probing Moss for a reusable field (e.g. pace) can match a document
+    that also happens to mention a dollar figure or place name. Only the field actually
+    being probed for may be pulled from that document - budget/destination must not leak."""
+    agent = get_agent()
+    user_id = "u-trip-5"
+
+    await get_moss().preferences.save(
+        {
+            "user_id": user_id,
+            "kind": "preference",
+            "content": (
+                "I love hiking any day. I prefer to have less than $600 budget for a "
+                "weekend getaway to Paris."
+            ),
+        }
+    )
+
+    response = None
+    for message in ["Plan a trip to Portland", "5 days", "driving", "airbnb", "vegetarian"]:
+        response = await agent.respond(
+            AgentRequest(user_id=user_id, session_id="trip-5", message=message)
+        )
+
+    assert response is not None
+    # budget is trip-specific and must still be asked, not silently backfilled to 600.
+    assert response.itinerary is None
+    assert response.pending_questions == ["What's your budget for the trip?"]
+
+    final = await agent.respond(
+        AgentRequest(user_id=user_id, session_id="trip-5", message="$200")
+    )
+    assert final.itinerary is not None
+    # budget came from this conversation, not leaked from the unrelated $600 mention.
+    assert final.itinerary.slots.budget == 200.0
+    # pace_preferences legitimately reused hiking from the matched document.
+    assert "hiking" in final.itinerary.slots.pace_preferences
 
 
 @pytest.mark.asyncio
