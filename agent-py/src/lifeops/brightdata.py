@@ -145,13 +145,23 @@ class LiveBrightDataService(BrightDataService):
                 context = browser.contexts[0] if browser.contexts else await browser.new_context()
                 page = await context.new_page()
                 await page.goto(target, wait_until="domcontentloaded", timeout=60_000)
-                rows = await page.locator("a:has(h3)").evaluate_all(
-                    """links => links.map(link => ({
-                        title: link.innerText,
-                        url: link.href,
-                        summary: link.parentElement?.parentElement?.innerText || ''
-                    }))"""
-                )
+                rows = []
+                for attempt in range(3):
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=15_000)
+                        await page.wait_for_timeout(750)
+                        rows = await page.locator("a:has(h3)").evaluate_all(
+                            """links => links.map(link => ({
+                                title: link.innerText,
+                                url: link.href,
+                                summary: link.parentElement?.parentElement?.innerText || ''
+                            }))"""
+                        )
+                        break
+                    except Exception:
+                        if attempt == 2:
+                            raise
+                        await page.wait_for_timeout(1_000)
                 await page.close()
                 await browser.close()
             results: list[BrightDataDocument] = []

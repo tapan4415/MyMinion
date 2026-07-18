@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     livekit_api_key: str | None = None
     livekit_api_secret: str | None = None
     livekit_agent_name: str = "myminion-agent"
+    buywise_api_url: str | None = "http://localhost:8787"
     bright_data_api_key: str | None = None
     bright_data_serp_zone: str | None = None
     bright_data_unlocker_zone: str | None = None
