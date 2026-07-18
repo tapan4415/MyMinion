@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
-from lifeops.models import SessionState, TripAccommodationType, TripSlots, TripTransportMode
+from lifeops.memory import MemoryManager
+from lifeops.models import (
+    MemoryCandidate,
+    MemoryKind,
+    SessionState,
+    TripAccommodationType,
+    TripSlots,
+    TripTransportMode,
+)
 from lifeops.moss import MossClient
 
 FOOD_VOCAB: dict[str, tuple[str, ...]] = {
@@ -64,6 +73,13 @@ _REUSABLE_FROM_MOSS = (
     "food_preferences",
     "pace_preferences",
 )
+
+_PREFERENCE_LABELS: dict[str, Callable[[Any], str]] = {
+    "transport_mode": lambda v: f"prefers traveling by {v.value}",
+    "accommodation_type": lambda v: f"prefers {v.value} accommodations",
+    "food_preferences": lambda v: f"food preferences: {', '.join(v)}",
+    "pace_preferences": lambda v: f"trip pace preferences: {', '.join(v)}",
+}
 
 _PROBE_TERMS: dict[str, str] = {
     "transport_mode": "fly flight plane drive driving road trip car transport",
@@ -155,13 +171,15 @@ class TripSlotExtractor:
 class TripSlotService:
     """Resolves what's already known about a trip and asks for the rest."""
 
-    def __init__(self, moss: MossClient) -> None:
+    def __init__(self, moss: MossClient, memory: MemoryManager) -> None:
         self._moss = moss
+        self._memory = memory
 
     async def resolve(self, user_id: str, session: SessionState, message: str) -> TripSlots:
         stored = session.temporary_variables.get("trip_slots") or {}
-        slots = TripSlots(**stored)
-        slots = TripSlotExtractor.merge(slots, TripSlotExtractor.extract(message))
+        before = TripSlots(**stored)
+        slots = TripSlotExtractor.merge(before, TripSlotExtractor.extract(message))
+        await self._persist_new_preferences(user_id, before, slots, message)
 
         missing = slots.missing_fields()
         reusable_missing = [field for field in missing if field in _REUSABLE_FROM_MOSS]
@@ -175,6 +193,26 @@ class TripSlotService:
 
         session.temporary_variables["trip_slots"] = slots.model_dump(mode="json")
         return slots
+
+    async def _persist_new_preferences(
+        self, user_id: str, before: TripSlots, after: TripSlots, source_message: str
+    ) -> None:
+        """Save durable preferences the moment they're stated, instead of relying on
+        MemoryManager's generic phrase-trigger patterns to catch the same fact by luck."""
+        for field in _REUSABLE_FROM_MOSS:
+            before_value = getattr(before, field)
+            after_value = getattr(after, field)
+            if after_value in (None, "", []) or before_value == after_value:
+                continue
+            candidate = MemoryCandidate(
+                kind=MemoryKind.PREFERENCE,
+                content=_PREFERENCE_LABELS[field](after_value),
+                confidence=1.0,
+                stable=True,
+                source_message=source_message,
+            )
+            if self._memory.should_store(candidate):
+                await self._memory.save(user_id, candidate)
 
     @staticmethod
     def missing_fields(slots: TripSlots) -> list[str]:

@@ -8,7 +8,7 @@ from lifeops.buywise import BuywiseClient
 from lifeops.config import get_settings
 from lifeops.knowledge import MossAgentKnowledgeRepository
 from lifeops.memory import MemoryManager
-from lifeops.moss import MossClient, create_cloud_moss_client
+from lifeops.moss import MossClient, create_cloud_moss_client, create_file_backed_moss_client
 from lifeops.planner import RuleBasedPlanner
 from lifeops.research import ResearchManager
 from lifeops.sessions import InMemorySessionRepository
@@ -20,6 +20,8 @@ from lifeops.trip_slots import TripSlotService
 def get_moss() -> MossClient:
     settings = get_settings()
     if settings.mock_moss:
+        if settings.moss_local_storage_path:
+            return create_file_backed_moss_client(settings.moss_local_storage_path)
         return MossClient()
     if not settings.moss_project_id or not settings.moss_project_key:
         raise RuntimeError("MOSS_PROJECT_ID and MOSS_PROJECT_KEY are required")
@@ -47,12 +49,13 @@ def get_agent() -> LifeOpsAgent:
     settings = get_settings()
     moss = get_moss()
     bright_data = get_bright_data()
+    memory = MemoryManager(moss)
     return LifeOpsAgent(
         planner=RuleBasedPlanner(),
-        memory=MemoryManager(moss),
+        memory=memory,
         research=ResearchManager(bright_data, moss),
         sessions=InMemorySessionRepository(),
-        trip_slots=TripSlotService(moss),
+        trip_slots=TripSlotService(moss, memory),
         trip_research=TripResearchService(bright_data, moss),
         contact=ContactIntelligenceAgent(bright_data),
         buying=BuyingAdvisor(BuywiseClient(settings.buywise_api_url))

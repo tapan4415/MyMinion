@@ -82,7 +82,6 @@ class MyMinionVoiceAgent(Agent):
                 "another language. Never say you are a chatbot or scaffold."
             ),
             tools=[run_lifeops_agent],
-            allow_interruptions=False,
         )
 
 
