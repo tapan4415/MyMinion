@@ -23,13 +23,16 @@ class LiveKitTokenService:
         self._key = settings.livekit_api_key
         self._secret = settings.livekit_api_secret
         self._agent_name = settings.livekit_agent_name
+        self._scribe_name = settings.livekit_scribe_agent_name
 
     def issue(self, request: LiveKitTokenRequest) -> LiveKitTokenResponse:
         room_name = request.room_name or f"myminion-{uuid4().hex[:12]}"
         identity = f"web-{uuid4().hex}"
-        room_config = api.RoomConfiguration(
-            agents=[api.RoomAgentDispatch(agent_name=self._agent_name)]
-        )
+        # The Scribe always listens; the conversational Companion joins only in "ask" mode.
+        dispatch = [api.RoomAgentDispatch(agent_name=self._scribe_name)]
+        if request.mode == "ask":
+            dispatch.append(api.RoomAgentDispatch(agent_name=self._agent_name))
+        room_config = api.RoomConfiguration(agents=dispatch)
         token = (
             api.AccessToken(self._key, self._secret)
             .with_identity(identity)

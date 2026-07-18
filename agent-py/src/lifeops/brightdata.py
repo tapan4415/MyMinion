@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
@@ -113,7 +114,16 @@ class LiveBrightDataService(BrightDataService):
             if self._browser_ws:
                 return await self._search_with_browser(query, limit=limit)
             raise
-        rows = payload.get("shopping") or payload.get("organic") or []
+        # /request wraps the SERP JSON in {"status_code","headers","body"} where body is
+        # a JSON string holding the parsed results (organic/shopping/etc.).
+        data = payload
+        body = payload.get("body")
+        if isinstance(body, str):
+            try:
+                data = json.loads(body)
+            except ValueError:
+                data = {}
+        rows = data.get("shopping") or data.get("organic") or []
         return [
             BrightDataDocument(
                 url=str(row.get("link") or ""),

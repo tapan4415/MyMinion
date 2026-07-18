@@ -10,11 +10,16 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
+    # Smarter model for the Scribe's fact extraction + attribution (override via SCRIBE_MODEL).
+    scribe_model: str = "gpt-4.1"
     livekit_url: str | None = None
     livekit_api_key: str | None = None
     livekit_api_secret: str | None = None
     livekit_agent_name: str = "myminion-agent"
-    buywise_api_url: str | None = "http://localhost:8787"
+    livekit_scribe_agent_name: str = "myminion-scribe"
+    # No Buywise service ships in this repo; leave unset so BuyingAdvisor falls back
+    # instead of calling a dead localhost:8787 once live Bright Data is enabled.
+    buywise_api_url: str | None = None
     bright_data_api_key: str | None = None
     bright_data_serp_zone: str | None = None
     bright_data_unlocker_zone: str | None = None

@@ -88,6 +88,84 @@ async def respond(request: AgentRequest, agent: LifeOpsAgent = Depends(get_agent
     return await agent.respond(request)
 
 
+_MEMORY_INDEXES = (
+    "user_profile",
+    "preferences",
+    "journeys",
+    "decisions",
+    "contacts",
+    "interactions",
+    "recommendations",
+)
+
+
+@app.get("/v1/moss/inspect")
+async def moss_inspect(
+    user_id: str = "demo-user", moss: MossClient = Depends(get_moss)
+) -> dict:
+    """Debug view of everything MyMinion knows for a user: memories + Bright Data research."""
+    # Force a fresh cloud read so the inspector reflects live writes from the Scribe/Companion
+    # processes (each process otherwise caches the loaded index in memory).
+    for name in (*_MEMORY_INDEXES, "research"):
+        index = getattr(moss, name, None)
+        loaded = getattr(index, "_loaded_indexes", None)
+        remote = getattr(index, "remote_name", None)
+        if loaded is not None and remote is not None:
+            loaded.discard(remote)
+    memories: list[dict] = []
+    for name in _MEMORY_INDEXES:
+        index = getattr(moss, name)
+        try:
+            docs = await index.search("", limit=100, filters={"user_id": user_id})
+        except Exception:
+            docs = []
+        for doc in docs:
+            content = (
+                doc.get("content")
+                or doc.get("goal")
+                or doc.get("title")
+                or doc.get("summary")
+                or doc.get("name")
+                or ""
+            )
+            if not content:
+                continue
+            memories.append(
+                {
+                    "index": name,
+                    "kind": doc.get("kind") or name,
+                    "content": content,
+                    "source": doc.get("source"),
+                    "created_at": doc.get("created_at") or doc.get("observed_at"),
+                    "id": doc.get("id"),
+                }
+            )
+    try:
+        research_docs = await moss.research.search("", limit=100, filters={"user_id": user_id})
+    except Exception:
+        research_docs = []
+    research = [
+        {
+            "title": doc.get("title"),
+            "summary": (doc.get("summary") or "")[:400],
+            "source_url": doc.get("source"),
+            "confidence": doc.get("confidence"),
+            "topic": doc.get("topic"),
+            "retrieved_at": doc.get("retrieved_at"),
+            "mock": bool((doc.get("raw") or {}).get("mock")),
+        }
+        for doc in research_docs
+    ]
+    memories.sort(key=lambda m: m.get("created_at") or "", reverse=True)
+    research.sort(key=lambda r: r.get("retrieved_at") or "", reverse=True)
+    return {
+        "user_id": user_id,
+        "counts": {"memories": len(memories), "research": len(research)},
+        "memories": memories,
+        "research": research,
+    }
+
+
 @app.post("/v1/interactions/analyze", response_model=ContactIntelligence)
 async def analyze_interaction(
     request: InteractionRequest,

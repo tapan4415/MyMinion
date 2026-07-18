@@ -13,9 +13,11 @@ type TranscriptLine = { id: string; role: "user" | "agent"; text: string; final:
 export function VoiceButton({
   onResult,
   onTranscript,
+  mode = "ask",
 }: {
   onResult?: (result: AgentResponse) => void;
   onTranscript?: (line: TranscriptLine) => void;
+  mode?: "ambient" | "ask";
 }) {
   const roomRef = useRef<Room | null>(null);
   const [connected, setConnected] = useState(false);
@@ -25,6 +27,7 @@ export function VoiceButton({
   const [progress, setProgress] = useState("");
   const [muted, setMuted] = useState(false);
   const [voiceResult, setVoiceResult] = useState<AgentResponse | null>(null);
+  const [scribe, setScribe] = useState<{ heard: string; saved: number; researched: number } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -46,7 +49,7 @@ export function VoiceButton({
       const response = await fetch("/api/livekit/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participant_name: "Web user" }),
+        body: JSON.stringify({ participant_name: "Web user", mode }),
       });
       if (!response.ok) throw new Error("Unable to start voice");
       const credentials = (await response.json()) as TokenResponse;
@@ -92,6 +95,9 @@ export function VoiceButton({
             setVoiceResult(data);
             onResult?.(data);
           }
+          if (topic === "myminion.scribe") {
+            setScribe(data as unknown as { heard: string; saved: number; researched: number });
+          }
         } catch { /* Ignore malformed third-party packets. */ }
       });
       room.on(RoomEvent.TrackSubscribed, track => {
@@ -110,6 +116,7 @@ export function VoiceButton({
         setConnected(false);
         setSpeaker("idle");
         setProgress("");
+        setScribe(null);
       });
       await room.connect(credentials.server_url, credentials.participant_token);
       await room.startAudio();
@@ -147,7 +154,7 @@ export function VoiceButton({
       {connected ? <MicOff size={19} /> : <AudioLines size={21} />}
     </Button>
     {connected && <div className="fixed inset-0 z-50 flex flex-col bg-[#fbfbfc] text-zinc-900">
-      <header className="flex h-20 items-center justify-between px-6"><div className="flex items-center gap-3 text-sm font-black"><span className="minion-face size-9"/> Voice mission</div><button onClick={() => void toggleVoice()} className="grid size-10 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"><X size={18}/></button></header>
+      <header className="flex h-20 items-center justify-between px-6"><div className="flex items-center gap-3 text-sm font-black"><span className="minion-face size-9"/> {mode === "ambient" ? "Listening mode" : "Voice mission"} <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><span className="size-1.5 animate-pulse rounded-full bg-red-500"/> Scribe listening</span></div><button onClick={() => void toggleVoice()} className="grid size-10 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"><X size={18}/></button></header>
       <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-8 overflow-y-auto px-6 pb-4 lg:grid-cols-[1fr_380px] lg:items-center">
         <div className="flex flex-col items-center justify-center">
         <div className={`minion-orb relative size-48 overflow-hidden rounded-full transition-all duration-500 sm:size-56 ${speaker === "agent" ? "opacity-100" : speaker === "user" ? "opacity-90" : "opacity-75"}`}>
@@ -155,6 +162,7 @@ export function VoiceButton({
         </div>
         <p className="mt-8 text-[15px] font-medium text-zinc-600">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening…"}</p>
         {progress && <p className="mt-3 rounded-full bg-indigo-50 px-4 py-2 text-xs text-indigo-600">{progress}</p>}
+        {scribe && <p className="mt-3 max-w-md rounded-full bg-emerald-50 px-4 py-2 text-center text-xs text-emerald-700">Scribe noted &ldquo;{scribe.heard.slice(0, 60)}{scribe.heard.length > 60 ? "…" : ""}&rdquo; · saved {scribe.saved} · researched {scribe.researched}</p>}
         <div className="mt-8 max-h-[28vh] w-full max-w-2xl space-y-3 overflow-y-auto px-4 text-center">
           {transcript.length === 0 ? <p className="text-sm text-zinc-400">Start speaking. Your live transcript will appear here.</p> : transcript.slice(-5).map(line => <div key={line.id}><p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{line.role === "user" ? "You" : "MyMinion"}</p><p className={`mt-1 text-[15px] leading-6 ${line.final ? "text-zinc-700" : "text-zinc-400"}`}>{line.text}</p></div>)}
         </div>
