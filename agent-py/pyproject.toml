@@ -18,8 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai-agents>=0.0.19,<1"]
 livekit = ["livekit-agents>=1.0,<2", "livekit-plugins-openai>=1.0,<2"]
+moss = ["moss>=1.0,<2"]
+brightdata = ["playwright>=1.50,<2"]
 dev = ["pytest>=8.3,<9", "pytest-asyncio>=0.24,<1", "ruff>=0.8,<1", "mypy>=1.13,<2"]
-all = ["lifeops-ai-agent[openai,livekit,dev]"]
+all = ["lifeops-ai-agent[openai,livekit,moss,brightdata,dev]"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lifeops"]

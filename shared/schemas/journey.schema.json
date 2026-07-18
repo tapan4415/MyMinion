@@ -7,7 +7,7 @@
   "properties": {
     "id": { "type": "string" },
     "goal": { "type": "string" },
-    "kind": { "enum": ["moving", "shopping", "travel", "insurance", "job_search", "general"] },
+    "kind": { "enum": ["moving", "shopping", "travel", "contact", "insurance", "job_search", "general"] },
     "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } },
     "dependencies": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
     "missing_information": { "type": "array", "items": { "type": "string" } },

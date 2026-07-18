@@ -1,5 +1,5 @@
 export type TaskStatus = "todo" | "researching" | "waiting" | "completed";
-export type JourneyKind = "moving" | "shopping" | "travel" | "insurance" | "job_search" | "general";
+export type JourneyKind = "moving" | "shopping" | "travel" | "contact" | "insurance" | "job_search" | "general";
 export type UseCase = "buying" | "contact_intelligence" | "trip_planning" | "general";
 
 export interface JourneyTask {
@@ -58,6 +58,7 @@ export interface ContactIntelligence {
   commitments: string[];
   follow_ups: string[];
   relationship_notes: string[];
+  recommendations: string[];
   provenance: string[];
   enrichment_status: string;
 }

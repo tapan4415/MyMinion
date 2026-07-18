@@ -6,6 +6,16 @@ One supervisor owns conversation continuity and delegates to a single primary sp
 Specialists share identity, session, memory, research, policy, observability, and approval
 services. This avoids three disconnected chatbots and gives the user one persistent agent.
 
+### Enforced specialist contract
+
+| Stage | Buying | Contact intelligence | Trip planning |
+|---|---|---|---|
+| Moss retrieval | Budget, product preferences, rejection reasons | Existing identity, relationship context, commitments | Pace, seats, stays, dietary and accessibility constraints |
+| Bright Data | Search/extract products, prices, reviews, policies | Discover public professional context; consent-gated URL extraction | Search/extract routes, stays, requirements, activities |
+| Evaluation | Constraint filter and evidence-weighted ranking | Entity resolution, provenance, commitments, follow-up advice | Feasibility, geography, timing, cost, volatility |
+| Moss write | Journey, evidence, ranked recommendations, decisions | Structured contact summary, sources, follow-ups | Journey, evidence, itinerary recommendation, decisions |
+| Side effect | Purchase requires approval | Sending outreach requires approval | Booking requires approval |
+
 ```mermaid
 flowchart LR
     U["Web / iOS / LiveKit"] --> G["API Gateway + Auth"]

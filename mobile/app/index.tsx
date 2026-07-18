@@ -42,6 +42,8 @@ export default function HomeScreen() {
             <View style={[styles.dot, { backgroundColor: statusColor[task.status] }]} />
             <View style={styles.cardBody}><Text style={styles.cardKicker}>STEP {index + 1} · {task.status.toUpperCase()}</Text><Text style={styles.cardTitle}>{task.title}</Text><Text style={styles.cardText}>{task.description}</Text></View>
           </View>)}
+          {result.recommendations.length > 0 && <><Text style={[styles.sectionTitle, { marginTop: 28 }]}>Recommendations</Text>{result.recommendations.map(item => <View key={item.id} style={styles.evidence}><Text style={styles.cardKicker}>{Math.round(item.score * 100)}% MATCH</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardText}>{item.rationale}</Text></View>)}</>}
+          {result.contact_intelligence && <><Text style={[styles.sectionTitle, { marginTop: 28 }]}>Relationship</Text><View style={styles.card}><View style={styles.cardBody}><Text style={styles.cardKicker}>PUBLIC CONTEXT + INTERACTION</Text><Text style={styles.cardTitle}>{result.contact_intelligence.name ?? "Contact"}</Text>{result.contact_intelligence.recommendations.map(item => <Text key={item} style={styles.cardText}>→ {item}</Text>)}</View></View></>}
           {result.research.length > 0 && <><Text style={[styles.sectionTitle, { marginTop: 28 }]}>Evidence</Text>{result.research.map(item => <View key={item.id} style={styles.evidence}><Text style={styles.cardKicker}>{Math.round(item.confidence * 100)}% CONFIDENCE</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardText}>{item.summary}</Text></View>)}</>}
         </>}
       </ScrollView>

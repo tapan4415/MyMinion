@@ -14,6 +14,7 @@ class JourneyKind(StrEnum):
     TRAVEL = "travel"
     INSURANCE = "insurance"
     JOB_SEARCH = "job_search"
+    CONTACT = "contact"
     GENERAL = "general"
 
 
@@ -113,6 +114,7 @@ class ContactIntelligence(BaseModel):
     commitments: list[str] = Field(default_factory=list)
     follow_ups: list[str] = Field(default_factory=list)
     relationship_notes: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
     provenance: list[str] = Field(default_factory=list)
     enrichment_status: str = "not_requested"
 
@@ -148,3 +150,15 @@ class AgentResponse(BaseModel):
     use_case: UseCase = UseCase.GENERAL
     recommendations: list[Recommendation] = Field(default_factory=list)
     contact_intelligence: ContactIntelligence | None = None
+
+
+class LiveKitTokenRequest(BaseModel):
+    room_name: str | None = Field(default=None, min_length=1, max_length=128)
+    participant_name: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class LiveKitTokenResponse(BaseModel):
+    server_url: str
+    participant_token: str
+    room_name: str
+    participant_identity: str

@@ -9,7 +9,10 @@ from lifeops.models import ContactIntelligence, InteractionRequest
 class ContactIntelligenceAgent:
     """Extracts interaction context and enriches only an explicitly supplied public URL."""
 
-    _name = re.compile(r"\b(?:with|met|called|spoke to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+    _name = re.compile(
+        r"\b(?:with|met|called|spoke to|spoke with)\s+"
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)"
+    )
     _company = re.compile(r"\b(?:at|from|works at)\s+([A-Z][\w&.-]+(?:\s+[A-Z][\w&.-]+)*)")
     _email = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 
@@ -34,7 +37,18 @@ class ContactIntelligenceAgent:
             commitments=commitments,
             follow_ups=follow_ups,
             relationship_notes=["Extracted from a user-provided interaction"],
+            recommendations=self._recommend(commitments, follow_ups),
             provenance=["interaction transcript"],
+        )
+        identity_query = " ".join(
+            part for part in (result.name, result.company, "professional profile") if part
+        )
+        discovery = await self._bright_data.search(
+            identity_query or f"professional context {' '.join(result.topics[:3])}", limit=3
+        )
+        result.provenance.extend(document.url for document in discovery)
+        result.relationship_notes.extend(
+            f"Public-web candidate: {document.title}" for document in discovery
         )
         if request.public_profile_url and request.consent_to_enrich:
             document = await self._bright_data.extract(request.public_profile_url)
@@ -46,6 +60,14 @@ class ContactIntelligenceAgent:
         elif request.public_profile_url:
             result.enrichment_status = "consent_required"
         return result
+
+    @staticmethod
+    def _recommend(commitments: list[str], follow_ups: list[str]) -> list[str]:
+        recommendations = [f"Track commitment: {item}" for item in commitments]
+        recommendations.extend(f"Create follow-up: {item}" for item in follow_ups)
+        if not recommendations:
+            recommendations.append("Confirm the desired next step before contacting this person")
+        return recommendations
 
     @staticmethod
     def _sentences_containing(text: str, terms: tuple[str, ...]) -> list[str]:
