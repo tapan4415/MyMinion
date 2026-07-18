@@ -50,7 +50,14 @@ _TRAVELERS_RE = re.compile(
 _CAP_WORDS = r"[A-Z][\w]*(?:\s+[A-Z][\w]*){0,3}"
 _FROM_TO_RE = re.compile(rf"\bfrom\s+({_CAP_WORDS})\s+to\s+({_CAP_WORDS})")
 _DESTINATION_RE = re.compile(
-    rf"\b(?:trip to|travel(?:ing|ling)? to|vacation to|holiday to|going to|visit)\s+({_CAP_WORDS})"
+    rf"\b(?:trip to|travel(?:ing|ling)? to|vacation to|holiday to|going to|go to|visit)"
+    rf"\s+({_CAP_WORDS})"
+)
+_NON_ANSWER_FILLERS = frozenset(
+    {
+        "yes", "no", "yeah", "nah", "yep", "nope", "ok", "okay", "sure",
+        "maybe", "um", "uh", "hmm", "i don't know", "not sure", "idk",
+    }
 )
 _ORIGIN_RE = re.compile(rf"\bfrom\s+({_CAP_WORDS})")
 
@@ -176,9 +183,27 @@ class TripSlotService:
         self._memory = memory
 
     async def resolve(self, user_id: str, session: SessionState, message: str) -> TripSlots:
-        stored = session.temporary_variables.get("trip_slots") or {}
-        before = TripSlots(**stored)
-        slots = TripSlotExtractor.merge(before, TripSlotExtractor.extract(message))
+        raw_stored = session.temporary_variables.get("trip_slots")
+        has_prior_turn = raw_stored is not None
+        before = TripSlots(**(raw_stored or {}))
+        extracted = TripSlotExtractor.extract(message)
+        slots = TripSlotExtractor.merge(before, extracted)
+
+        # A bare reply to "Where would you like to go?" (e.g. "Lake Tahoe") won't match
+        # any trigger phrase or other field, so treat it as the destination itself. Only
+        # applies from the second turn onward - on the very first message, "destination"
+        # being unset doesn't mean we just asked about it.
+        if (
+            has_prior_turn
+            and not extracted
+            and slots.destination is None
+            and "destination" in before.missing_fields()
+        ):
+            candidate = message.strip().rstrip(".!?")
+            is_filler = candidate.lower() in _NON_ANSWER_FILLERS
+            if candidate and not is_filler and len(candidate.split()) <= 6:
+                slots = TripSlotExtractor.merge(slots, {"destination": candidate.title()})
+
         await self._persist_new_preferences(user_id, before, slots, message)
 
         missing = slots.missing_fields()
@@ -189,7 +214,12 @@ class TripSlotService:
                 hits = await index.search(probe, limit=5, filters={"user_id": user_id})
                 for hit in hits:
                     content = str(hit.get("content") or hit.get("goal") or "")
-                    slots = TripSlotExtractor.merge(slots, TripSlotExtractor.extract(content))
+                    # Only pull the specific reusable fields being probed for out of a
+                    # matched document - it may also mention trip-specific facts (budget,
+                    # destination, dates) that must never leak in from an unrelated trip.
+                    found = TripSlotExtractor.extract(content)
+                    reusable_found = {k: v for k, v in found.items() if k in _REUSABLE_FROM_MOSS}
+                    slots = TripSlotExtractor.merge(slots, reusable_found)
 
         session.temporary_variables["trip_slots"] = slots.model_dump(mode="json")
         return slots
@@ -212,7 +242,7 @@ class TripSlotService:
                 source_message=source_message,
             )
             if self._memory.should_store(candidate):
-                await self._memory.save(user_id, candidate)
+                await self._memory.save(user_id, candidate, source="trip_slots")
 
     @staticmethod
     def missing_fields(slots: TripSlots) -> list[str]:
