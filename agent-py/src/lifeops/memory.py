@@ -19,10 +19,20 @@ class MemoryManager:
             True,
         ),
         (
+            MemoryKind.PREFERENCE,
+            re.compile(r"\b(?:i prioritize|most important is|with strong)\s+(.+)", re.I),
+            True,
+        ),
+        (
             MemoryKind.CONSTRAINT,
             re.compile(
                 r"\b(?:my budget is|i cannot|i can't|must be|need to stay under)\s+(.+)", re.I
             ),
+            True,
+        ),
+        (
+            MemoryKind.CONSTRAINT,
+            re.compile(r"\bunder\s+(\$?\d[\d,]*(?:\.\d{1,2})?)", re.I),
             True,
         ),
         (

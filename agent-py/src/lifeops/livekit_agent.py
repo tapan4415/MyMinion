@@ -3,6 +3,7 @@ from __future__ import annotations
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, RunContext, function_tool
 from livekit.plugins import openai
+from livekit.plugins.openai.realtime.realtime_model import TurnDetection
 
 from lifeops.agent import LifeOpsAgent
 from lifeops.config import get_settings
@@ -26,25 +27,43 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
     """Plan and research a real-world request using MyMinion's memory and specialist agents."""
     room_name = context.session.room_io.room.name if context.session.room_io else "voice"
     if context.session.room_io:
-        await context.session.room_io.room.local_participant.publish_data(
-            '{"stage":"Retrieving memory and researching current sources"}',
-            reliable=True,
-            topic="myminion.progress",
-        )
+        try:
+            await context.session.room_io.room.local_participant.publish_data(
+                '{"stage":"Retrieving memory and researching current sources"}',
+                reliable=True,
+                topic="myminion.progress",
+            )
+        except Exception:
+            pass
+    context.disallow_interruptions()
     await context.update("I’m checking your preferences and researching the best next step.")
-    response = await get_agent().respond(
-        AgentRequest(
-            user_id="voice-user",
-            session_id=f"voice-{room_name}",
-            message=request,
+    async with context.with_filler(
+        lambda step: (
+            "I’m still working through the live sources."
+            if step % 2 == 0
+            else "I’m comparing the evidence now; I’ll keep going until the result is ready."
+        ),
+        delay=6,
+        interval=10,
+        max_steps=6,
+    ):
+        response = await get_agent().respond(
+            AgentRequest(
+                user_id="demo-user",
+                session_id=f"voice-{room_name}",
+                message=request,
+            )
         )
-    )
     if context.session.room_io:
-        await context.session.room_io.room.local_participant.publish_data(
-            response.model_dump_json(),
-            reliable=True,
-            topic="myminion.agent_result",
-        )
+        try:
+            await context.session.room_io.room.local_participant.publish_data(
+                response.model_dump_json(),
+                reliable=True,
+                topic="myminion.agent_result",
+            )
+        except Exception:
+            # Moss persistence has already completed; a closed room must not undo the work.
+            pass
     return response.message
 
 
@@ -60,6 +79,7 @@ class MyMinionVoiceAgent(Agent):
                 "Never say you are a chatbot or scaffold."
             ),
             tools=[run_lifeops_agent],
+            allow_interruptions=False,
         )
 
 
@@ -80,6 +100,12 @@ async def livekit_entrypoint(ctx: JobContext) -> None:
             model="gpt-realtime",
             voice="marin",
             api_key=settings.openai_api_key,
+            turn_detection=TurnDetection(
+                type="semantic_vad",
+                eagerness="medium",
+                create_response=True,
+                interrupt_response=False,
+            ),
         )
     )
     await session.start(room=ctx.room, agent=MyMinionVoiceAgent())
