@@ -1,4 +1,4 @@
-from lifeops.brightdata import BrightDataService
+from lifeops.brightdata import BrightDataError, BrightDataService
 from lifeops.models import Journey, ResearchResult
 from lifeops.moss import MossClient
 
@@ -11,9 +11,16 @@ class ResearchManager:
     async def research_journey(
         self, user_id: str, journey: Journey, *, limit: int = 3
     ) -> list[ResearchResult]:
-        documents = await self._bright_data.search(
-            f"{journey.goal} {journey.next_action}", limit=limit
-        )
+        query = f"{journey.goal} {journey.next_action}"
+        if journey.kind.value == "shopping":
+            query = (
+                f"{journey.goal} buy price "
+                "site:bestbuy.com OR site:amazon.com OR site:walmart.com OR site:target.com"
+            )
+        try:
+            documents = await self._bright_data.search(query, limit=max(limit, 5))
+        except BrightDataError:
+            documents = []
         results = [
             ResearchResult(
                 source=doc.url,
