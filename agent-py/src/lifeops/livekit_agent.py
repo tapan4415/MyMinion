@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, RunContext, function_tool
 from livekit.plugins import openai
@@ -35,18 +37,9 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
             )
         except Exception:
             pass
-    context.disallow_interruptions()
     await context.update("I’m checking your preferences and researching the best next step.")
-    async with context.with_filler(
-        lambda step: (
-            "I’m still working through the live sources."
-            if step % 2 == 0
-            else "I’m comparing the evidence now; I’ll keep going until the result is ready."
-        ),
-        delay=6,
-        interval=10,
-        max_steps=6,
-    ):
+
+    async def complete_mission() -> str:
         response = await get_agent().respond(
             AgentRequest(
                 user_id="demo-user",
@@ -54,17 +47,36 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
                 message=request,
             )
         )
-    if context.session.room_io:
-        try:
-            await context.session.room_io.room.local_participant.publish_data(
-                response.model_dump_json(),
-                reliable=True,
-                topic="myminion.agent_result",
-            )
-        except Exception:
-            # Moss persistence has already completed; a closed room must not undo the work.
-            pass
-    return response.message
+        if context.session.room_io:
+            try:
+                await context.session.room_io.room.local_participant.publish_data(
+                    response.model_dump_json(),
+                    reliable=True,
+                    topic="myminion.agent_result",
+                )
+            except Exception:
+                # Moss persistence has already completed; a closed room must not undo the work.
+                pass
+        return response.message
+
+    # The mission is intentionally independent of the current speech turn. A user can
+    # interrupt the voice response without cancelling research or Moss persistence.
+    mission = asyncio.create_task(complete_mission())
+    try:
+        async with context.with_filler(
+            lambda step: (
+                "I’m still working through the live sources."
+                if step % 2 == 0
+                else "I’m comparing the evidence now; the mission will keep running."
+            ),
+            delay=6,
+            interval=10,
+            max_steps=6,
+        ):
+            return await asyncio.shield(mission)
+    except asyncio.CancelledError:
+        # asyncio.shield keeps complete_mission running and it will publish the result.
+        return "I heard you. The mission is still running in the background."
 
 
 class MyMinionVoiceAgent(Agent):
@@ -82,7 +94,7 @@ class MyMinionVoiceAgent(Agent):
                 "another language. Never say you are a chatbot or scaffold."
             ),
             tools=[run_lifeops_agent],
-            allow_interruptions=False,
+            allow_interruptions=True,
         )
 
 
