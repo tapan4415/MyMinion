@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     moss_project_id: str | None = None
     moss_project_key: str | None = None
     moss_auto_create_indexes: bool = True
+    moss_local_storage_path: str | None = None
     use_mock_services: bool = True
     use_mock_bright_data: bool | None = None
     use_mock_moss: bool | None = None

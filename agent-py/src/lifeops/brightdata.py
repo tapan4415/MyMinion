@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
@@ -103,9 +104,10 @@ class LiveBrightDataService(BrightDataService):
             raise BrightDataError(
                 "BRIGHT_DATA_SERP_ZONE or BRIGHT_DATA_BROWSER_WS is required for live search"
             )
-        target = "https://www.google.com/search?" + urlencode(
-            {"q": query, "hl": "en", "gl": "us", "brd_json": "1"}
-        )
+        params = {"q": query, "hl": "en", "gl": "us", "brd_json": "1"}
+        if "price" in query.lower() or "buy" in query.lower():
+            params["tbm"] = "shop"
+        target = "https://www.google.com/search?" + urlencode(params)
         try:
             payload = await self._request(
                 {"zone": self._serp_zone, "url": target, "format": "json", "method": "GET"}
@@ -132,7 +134,7 @@ class LiveBrightDataService(BrightDataService):
                 metadata={
                     "provider": "bright_data",
                     "source": row.get("source"),
-                    "price": row.get("price"),
+                    "price": self._normalized_price(row.get("price")),
                     "delivery": row.get("delivery"),
                     "query": query,
                 },
@@ -140,6 +142,12 @@ class LiveBrightDataService(BrightDataService):
             for row in rows
             if row.get("link")
         ][:limit]
+
+    @staticmethod
+    def _normalized_price(value: Any) -> Any:
+        if isinstance(value, dict):
+            return value.get("value") or value.get("price") or value.get("display")
+        return value
 
     async def _search_with_browser(self, query: str, *, limit: int) -> list[BrightDataDocument]:
         try:
@@ -247,22 +255,97 @@ class LiveBrightDataService(BrightDataService):
                 browser = await playwright.chromium.connect_over_cdp(self._browser_ws)
                 context = browser.contexts[0] if browser.contexts else await browser.new_context()
                 page = await context.new_page()
-                await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                await page.goto(url, wait_until="commit", timeout=60_000)
+                await page.wait_for_timeout(2_000)
                 title = await page.title()
                 text = await page.locator("body").inner_text(timeout=30_000)
+                price_candidates = await page.locator(
+                    '[itemprop="price"], meta[property="product:price:amount"]'
+                ).evaluate_all(
+                    """elements => elements.map(element =>
+                        element.getAttribute('content') || element.textContent || '')"""
+                )
+                json_ld = await page.locator(
+                    'script[type="application/ld+json"]'
+                ).all_text_contents()
                 await page.close()
                 await browser.close()
+            commerce_signals = (
+                "add to cart",
+                "buy now",
+                "in stock",
+                "shipping",
+                "pickup",
+            )
+            has_offer_controls = len(text) >= 500 and any(
+                signal in text.lower() for signal in commerce_signals
+            )
+            price = (
+                self._page_price(price_candidates, json_ld, text)
+                if has_offer_controls
+                else None
+            )
             return BrightDataDocument(
                 url=url,
                 title=title or url,
                 text=text,
-                metadata={"provider": "bright_data", "zone": "browser_api"},
+                metadata={
+                    "provider": "bright_data",
+                    "zone": "browser_api",
+                    "price": price,
+                    "verified_product_page": bool(price and has_offer_controls),
+                },
             )
         except Exception as error:
             detail = str(error)
             if self._browser_ws:
                 detail = detail.replace(self._browser_ws, "[redacted]")
             raise BrightDataError(f"Bright Data Browser API failed: {detail[:300]}") from error
+
+    @classmethod
+    def _page_price(
+        cls, candidates: list[str], json_ld_documents: list[str], text: str
+    ) -> str | None:
+        for candidate in candidates:
+            normalized = cls._price_string(candidate)
+            if normalized:
+                return normalized
+        for raw in json_ld_documents:
+            try:
+                parsed = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for value in cls._walk_prices(parsed):
+                normalized = cls._price_string(value)
+                if normalized:
+                    return normalized
+        match = re.search(r"\$\s*([0-9][0-9,]*(?:\.\d{1,2})?)", text)
+        if not match:
+            return None
+        price = float(match.group(1).replace(",", ""))
+        return f"${price:.2f}" if price > 0 else None
+
+    @classmethod
+    def _walk_prices(cls, value: Any) -> list[Any]:
+        prices: list[Any] = []
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key.lower() in {"price", "lowprice"}:
+                    prices.append(child)
+                else:
+                    prices.extend(cls._walk_prices(child))
+        elif isinstance(value, list):
+            for child in value:
+                prices.extend(cls._walk_prices(child))
+        return prices
+
+    @staticmethod
+    def _price_string(value: Any) -> str | None:
+        match = re.search(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)", str(value))
+        if not match:
+            return None
+        price = float(match.group(1).replace(",", ""))
+        return f"${price:.2f}" if price > 0 else None
 
     async def crawl(self, url: str, *, max_pages: int = 10) -> list[BrightDataDocument]:
         # The generic interface returns documents synchronously. Production domain crawls
