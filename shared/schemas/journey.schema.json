@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeops.ai/schemas/journey.schema.json",
+  "title": "Journey",
+  "type": "object",
+  "required": ["id", "goal", "kind", "tasks", "dependencies", "missing_information", "next_action", "status"],
+  "properties": {
+    "id": { "type": "string" },
+    "goal": { "type": "string" },
+    "kind": { "enum": ["moving", "shopping", "travel", "insurance", "job_search", "general"] },
+    "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } },
+    "dependencies": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "next_action": { "type": "string" },
+    "status": { "enum": ["active", "paused", "completed"] }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "required": ["id", "title", "description", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "enum": ["todo", "researching", "waiting", "completed"] }
+      }
+    }
+  }
+}

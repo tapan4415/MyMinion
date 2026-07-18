@@ -1,0 +1,14 @@
+services:
+  api:
+    build: ./agent-py
+    environment:
+      USE_MOCK_SERVICES: "true"
+    ports: ["8000:8000"]
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      AGENT_API_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on: [api]

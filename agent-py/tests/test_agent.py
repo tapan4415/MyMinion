@@ -1,0 +1,71 @@
+import pytest
+
+from lifeops.dependencies import get_agent, get_contact_agent, get_moss
+from lifeops.models import AgentRequest, InteractionRequest, JourneyKind, UseCase
+
+
+@pytest.fixture(autouse=True)
+def reset_dependencies() -> None:
+    get_agent.cache_clear()
+    get_contact_agent.cache_clear()
+    get_moss.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_agent_creates_moving_journey_and_mock_research() -> None:
+    response = await get_agent().respond(
+        AgentRequest(
+            user_id="u1", session_id="s1", message="I am moving to Seattle and my budget is $4,000"
+        )
+    )
+    assert response.journey.kind == JourneyKind.MOVING
+    assert len(response.journey.tasks) == 6
+    assert response.research
+    assert response.research[0].raw["mock"] is True
+    assert any(memory.kind.value == "constraint" for memory in response.memories_saved)
+
+
+@pytest.mark.asyncio
+async def test_memory_is_available_on_later_session() -> None:
+    agent = get_agent()
+    await agent.respond(
+        AgentRequest(user_id="u1", session_id="first", message="I prefer boutique hotels")
+    )
+    response = await agent.respond(
+        AgentRequest(user_id="u1", session_id="second", message="Plan a trip with hotels")
+    )
+    assert any("boutique hotels" in memory.content for memory in response.memories_used)
+
+
+@pytest.mark.asyncio
+async def test_buying_flow_returns_ranked_recommendations() -> None:
+    response = await get_agent().respond(
+        AgentRequest(user_id="u1", session_id="buy", message="Recommend a couch under $1500")
+    )
+    assert response.use_case == UseCase.BUYING
+    assert len(response.recommendations) == 3
+    assert response.recommendations[0].score > response.recommendations[1].score
+
+
+@pytest.mark.asyncio
+async def test_trip_flow_returns_itinerary_strategy() -> None:
+    response = await get_agent().respond(
+        AgentRequest(user_id="u1", session_id="trip", message="Plan a trip to Japan")
+    )
+    assert response.use_case == UseCase.TRIP_PLANNING
+    assert response.recommendations[0].attributes["pace"] == "balanced"
+
+
+@pytest.mark.asyncio
+async def test_contact_enrichment_requires_consent() -> None:
+    intelligence = await get_contact_agent().analyze(
+        InteractionRequest(
+            user_id="u1",
+            session_id="contact",
+            transcript="I spoke with Sarah Chen at Acme. She will send the proposal.",
+            public_profile_url="https://www.linkedin.com/in/sarah-chen",
+        )
+    )
+    assert intelligence.name == "Sarah Chen"
+    assert intelligence.enrichment_status == "consent_required"
+    assert intelligence.commitments == ["She will send the proposal"]

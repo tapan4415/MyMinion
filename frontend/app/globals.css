@@ -1,0 +1,4 @@
+@tailwind base; @tailwind components; @tailwind utilities;
+:root { color-scheme: dark; } * { box-sizing: border-box; } body { margin: 0; background: #101116; color: #f4f1f8; font-family: var(--font-body), sans-serif; } button, textarea { font: inherit; }
+body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 45% -10%, rgba(173,145,212,.11), transparent 34%), linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px); background-size: auto, 100% 48px; }
+::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-thumb { background: #353741; border-radius: 9px; }

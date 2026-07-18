@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "MyMinion",
+    "slug": "my-minion",
+    "scheme": "lifeops",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.lifeops.mobile",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "LifeOps uses your microphone so you can speak your goals to your agent."
+      }
+    },
+    "plugins": ["expo-router"],
+    "extra": {
+      "agentApiUrl": "http://localhost:8000"
+    }
+  }
+}
