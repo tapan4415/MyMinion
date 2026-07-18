@@ -209,6 +209,7 @@ class MossClient:
         "contacts",
         "interactions",
         "recommendations",
+        "trip_itineraries",
     )
 
     def __init__(self, indexes: dict[str, MossIndex[dict[str, Any]]] | None = None) -> None:
@@ -245,6 +246,10 @@ class MossClient:
     @property
     def recommendations(self) -> MossIndex[dict[str, Any]]:
         return self._indexes["recommendations"]
+
+    @property
+    def trip_itineraries(self) -> MossIndex[dict[str, Any]]:
+        return self._indexes["trip_itineraries"]
 
     def index_for_kind(self, kind: str) -> MossIndex[dict[str, Any]]:
         mapping = defaultdict(

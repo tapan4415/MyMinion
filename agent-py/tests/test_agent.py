@@ -67,14 +67,15 @@ async def test_buying_phrase_builds_budget_and_call_quality_persona() -> None:
 
 
 @pytest.mark.asyncio
-async def test_trip_flow_returns_itinerary_strategy() -> None:
+async def test_trip_flow_asks_for_missing_slots_before_building_itinerary() -> None:
     response = await get_agent().respond(
         AgentRequest(user_id="u1", session_id="trip", message="Plan a trip to Japan")
     )
     assert response.use_case == UseCase.TRIP_PLANNING
-    assert response.recommendations[0].attributes["pace"] == "balanced"
-    stored = await get_moss().research.search("Japan", filters={"user_id": "u1"})
-    assert stored
+    assert response.itinerary is None
+    assert not response.recommendations
+    assert response.pending_questions
+    assert response.message == response.pending_questions[0]
 
 
 @pytest.mark.asyncio

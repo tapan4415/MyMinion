@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from lifeops.models import ContactIntelligence, Journey, Recommendation, UseCase
+from lifeops.models import ContactIntelligence, Journey, Recommendation, TripItinerary, UseCase
 from lifeops.moss import MossClient
 
 
@@ -25,6 +25,9 @@ class AgentKnowledgeRepository(ABC):
     async def save_contact_summary(
         self, user_id: str, session_id: str, intelligence: ContactIntelligence
     ) -> None: ...
+
+    @abstractmethod
+    async def save_trip_itinerary(self, user_id: str, itinerary: TripItinerary) -> None: ...
 
 
 class MossAgentKnowledgeRepository(AgentKnowledgeRepository):
@@ -70,3 +73,8 @@ class MossAgentKnowledgeRepository(AgentKnowledgeRepository):
         await self._moss.interactions.save(document)
         if intelligence.name or intelligence.email or intelligence.public_profile_url:
             await self._moss.contacts.save(document)
+
+    async def save_trip_itinerary(self, user_id: str, itinerary: TripItinerary) -> None:
+        await self._moss.trip_itineraries.save(
+            {**itinerary.model_dump(mode="json"), "user_id": user_id}
+        )
