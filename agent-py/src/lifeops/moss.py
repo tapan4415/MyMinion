@@ -124,18 +124,22 @@ class MossCloudIndex(MossIndex[dict[str, Any]]):
         stored = deepcopy(document)
         stored.setdefault("id", uuid4().hex)
         stored["_moss_index"] = self.name
-        await self._client.add_docs(
-            self.remote_name,
-            [
-                DocumentInfo(
-                    id=str(stored["id"]),
-                    text=self._searchable_text(stored),
-                    metadata=self._metadata(stored),
-                    payload=json.dumps(stored, sort_keys=True, default=str),
-                )
-            ],
-            MutationOptions(upsert=True),
+        document_info = DocumentInfo(
+            id=str(stored["id"]),
+            text=self._searchable_text(stored),
+            metadata=self._metadata(stored),
+            payload=json.dumps(stored, sort_keys=True, default=str),
         )
+        for attempt in range(3):
+            try:
+                await self._client.add_docs(
+                    self.remote_name, [document_info], MutationOptions(upsert=True)
+                )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.5 * (2**attempt))
         self._loaded_indexes.discard(self.remote_name)
         return stored
 

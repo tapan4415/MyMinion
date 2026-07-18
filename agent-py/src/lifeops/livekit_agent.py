@@ -135,7 +135,7 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
                 await publish("myminion.agent_result", response.model_dump_json())
                 return response.message
             except Exception as error:
-                last_error = f"{type(error).__name__}: provider mission failed"
+                last_error = f"{type(error).__name__}: {str(error)[:160] or 'provider mission failed'}"
                 if attempt < 2:
                     continue
 
