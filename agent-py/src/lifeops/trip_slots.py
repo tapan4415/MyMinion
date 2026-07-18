@@ -242,7 +242,7 @@ class TripSlotService:
                 source_message=source_message,
             )
             if self._memory.should_store(candidate):
-                await self._memory.save(user_id, candidate)
+                await self._memory.save(user_id, candidate, source="trip_slots")
 
     @staticmethod
     def missing_fields(slots: TripSlots) -> list[str]:
