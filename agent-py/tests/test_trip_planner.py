@@ -90,3 +90,44 @@ async def test_durable_preference_is_reused_without_being_asked_again() -> None:
     # The pace question was answered from memory, so it was never asked directly.
     assert response.itinerary.slots.transport_mode == TripTransportMode.ROAD
     assert response.itinerary.slots.accommodation_type == TripAccommodationType.AIRBNB
+
+
+@pytest.mark.asyncio
+async def test_bare_answers_are_persisted_even_when_memory_manager_would_miss_them() -> None:
+    """Regression test: a bare one-word answer like "vegetarian" or "airbnb" doesn't match
+    any of MemoryManager's "I prefer/I live in/..." phrase patterns, so TripSlotService must
+    persist the resolved slot itself rather than depending on that regex to catch it too."""
+    agent = get_agent()
+    user_id = "u-trip-4"
+
+    turns = [
+        "Plan a trip to Portland",
+        "5 days",
+        "driving",
+        "airbnb",
+        "$500",
+        "vegetarian",
+        "hiking",
+    ]
+    for message in turns:
+        await agent.respond(AgentRequest(user_id=user_id, session_id="trip-4", message=message))
+
+    stored_preferences = await get_moss().preferences.search("", filters={"user_id": user_id})
+    saved_content = " ".join(str(doc.get("content", "")) for doc in stored_preferences).lower()
+    assert "driving" in saved_content or "road" in saved_content
+    assert "airbnb" in saved_content
+    assert "vegetarian" in saved_content
+    assert "hiking" in saved_content
+
+    response = None
+    for message in ["Plan a trip to Seattle", "3 days", "$400"]:
+        response = await agent.respond(
+            AgentRequest(user_id=user_id, session_id="trip-4-new", message=message)
+        )
+
+    assert response is not None
+    assert response.itinerary is not None
+    assert response.itinerary.slots.transport_mode == TripTransportMode.ROAD
+    assert response.itinerary.slots.accommodation_type == TripAccommodationType.AIRBNB
+    assert "vegetarian" in response.itinerary.slots.food_preferences
+    assert "hiking" in response.itinerary.slots.pace_preferences

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
@@ -63,6 +64,47 @@ class InMemoryMossIndex(MossIndex[T]):
 
     async def delete(self, document_id: str) -> bool:
         return self._documents.pop(document_id, None) is not None
+
+
+class FileBackedMossIndex(InMemoryMossIndex[T]):
+    """Same behavior as InMemoryMossIndex, persisted to a local JSON file so data
+    survives a process restart. Useful for local development when the real Moss SDK
+    isn't installable on the current platform (e.g. no native wheel available) but
+    restart-safe data still is."""
+
+    def __init__(self, name: str, directory: str) -> None:
+        super().__init__(name)
+        os.makedirs(directory, exist_ok=True)
+        self._path = os.path.join(directory, f"{name}.json")
+        if os.path.exists(self._path):
+            try:
+                with open(self._path) as handle:
+                    self._documents = json.load(handle)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def _flush(self) -> None:
+        tmp_path = f"{self._path}.tmp"
+        with open(tmp_path, "w") as handle:
+            json.dump(self._documents, handle, default=str)
+        os.replace(tmp_path, self._path)
+
+    async def save(self, document: T) -> T:
+        result = await super().save(document)
+        self._flush()
+        return result
+
+    async def update(self, document_id: str, changes: dict[str, Any]) -> T | None:
+        result = await super().update(document_id, changes)
+        if result is not None:
+            self._flush()
+        return result
+
+    async def delete(self, document_id: str) -> bool:
+        result = await super().delete(document_id)
+        if result:
+            self._flush()
+        return result
 
 
 class MossCloudIndex(MossIndex[dict[str, Any]]):
@@ -257,6 +299,13 @@ class MossClient:
             },
         )
         return mapping[kind]
+
+
+def create_file_backed_moss_client(directory: str) -> MossClient:
+    """Local, restart-safe Moss registry — same interface as the in-memory client,
+    but each index is persisted to a JSON file under `directory`."""
+    indexes = {name: FileBackedMossIndex(name, directory) for name in MossClient.INDEX_NAMES}
+    return MossClient(indexes)
 
 
 def create_cloud_moss_client(
