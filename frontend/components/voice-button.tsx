@@ -91,7 +91,9 @@ export function VoiceButton({
           const data = JSON.parse(new TextDecoder().decode(payload)) as AgentResponse & { stage?: string; memories?: string[] };
           if (topic === "myminion.progress") {
             setProgress(data.stage ?? "Working on it");
-            setProgressMemories(Array.isArray(data.memories) ? data.memories : []);
+            setProgressMemories(
+              Array.isArray(data.memories) ? Array.from(new Set(data.memories)) : [],
+            );
           }
           if (topic === "myminion.agent_result") {
             setProgress("Results ready");
@@ -166,7 +168,7 @@ export function VoiceButton({
         <p className="mt-8 text-[15px] font-medium text-zinc-600">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening…"}</p>
         <p className="mt-2 text-center text-[11px] text-zinc-400">You can interrupt naturally. Once captured, your mission keeps running.</p>
         {progress && <p className="mt-3 rounded-full bg-indigo-50 px-4 py-2 text-xs text-indigo-600">{progress}</p>}
-        {progressMemories.length > 0 && !voiceResult && <div className="mt-3 flex max-w-xl flex-wrap justify-center gap-2">{progressMemories.map(memory => <span key={memory} className="rounded-full border border-[#ead66c] bg-[#fff9d9] px-3 py-1.5 text-[10px] font-bold text-[#675400]">Moss → {memory}</span>)}</div>}
+        {progressMemories.length > 0 && !voiceResult && <div className="mt-3 flex max-w-xl flex-wrap justify-center gap-2">{progressMemories.map((memory, index) => <span key={`${index}-${memory}`} className="rounded-full border border-[#ead66c] bg-[#fff9d9] px-3 py-1.5 text-[10px] font-bold text-[#675400]">Moss → {memory}</span>)}</div>}
         <div className="mt-8 max-h-[28vh] w-full max-w-2xl space-y-3 overflow-y-auto px-4 text-center">
           {transcript.length === 0 ? <p className="text-sm text-zinc-400">Start speaking. Your live transcript will appear here.</p> : transcript.slice(-5).map(line => <div key={line.id}><p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">{line.role === "user" ? "You" : "MyMinion"}</p><p className={`mt-1 text-[15px] leading-6 ${line.final ? "text-zinc-700" : "text-zinc-400"}`}>{line.text}</p></div>)}
         </div>
