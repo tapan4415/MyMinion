@@ -10,7 +10,14 @@ TRAVEL = JourneyTemplate(
         ("Build itinerary", "Balance stays, activities, and recovery time."),
         ("Check requirements", "Review entry, insurance, connectivity, and bookings."),
     ),
-    missing_information=("dates", "departure airport", "budget"),
+    missing_information=(
+        "trip duration",
+        "flight or road transport preference",
+        "hotel or Airbnb preference",
+        "budget",
+        "food preferences",
+        "adventure, relaxing, or hiking pace",
+    ),
     research_queries=(
         "flight routes",
         "entry requirements",

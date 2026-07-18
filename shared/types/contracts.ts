@@ -63,6 +63,44 @@ export interface ContactIntelligence {
   enrichment_status: string;
 }
 
+export type TripTransportMode = "flight" | "road" | "either";
+export type TripAccommodationType = "hotel" | "airbnb" | "either";
+
+export interface TripSlots {
+  destination: string | null;
+  origin: string | null;
+  travelers: number | null;
+  duration_days: number | null;
+  start_date: string | null;
+  transport_mode: TripTransportMode | null;
+  accommodation_type: TripAccommodationType | null;
+  budget: number | null;
+  budget_currency: string;
+  food_preferences: string[];
+  pace_preferences: string[];
+}
+
+export interface TripItineraryDay {
+  day_number: number;
+  focus: string;
+  transport: string | null;
+  lodging: string | null;
+  meals: string[];
+  activities: string[];
+  evidence_ids: string[];
+}
+
+export interface TripItinerary {
+  id: string;
+  journey_id: string;
+  slots: TripSlots;
+  days: TripItineraryDay[];
+  estimated_total_cost: number | null;
+  budget_status: "under" | "near" | "over" | "unknown";
+  evidence_ids: string[];
+  generated_at: string;
+}
+
 export interface AgentResponse {
   message: string;
   journey: Journey;
@@ -72,4 +110,6 @@ export interface AgentResponse {
   use_case: UseCase;
   recommendations: Recommendation[];
   contact_intelligence: ContactIntelligence | null;
+  itinerary: TripItinerary | null;
+  pending_questions: string[];
 }
