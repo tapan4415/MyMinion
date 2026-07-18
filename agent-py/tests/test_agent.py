@@ -50,6 +50,23 @@ async def test_buying_flow_returns_ranked_recommendations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_buying_phrase_builds_budget_and_call_quality_persona() -> None:
+    response = await get_agent().respond(
+        AgentRequest(
+            user_id="persona-user",
+            session_id="persona-buy",
+            message=(
+                "Find the best noise-cancelling headphones under $400 "
+                "with strong call quality."
+            ),
+        )
+    )
+    contents = [memory.content.lower() for memory in response.memories_saved]
+    assert any("400" in content for content in contents)
+    assert any("call quality" in content for content in contents)
+
+
+@pytest.mark.asyncio
 async def test_trip_flow_asks_for_missing_slots_before_building_itinerary() -> None:
     response = await get_agent().respond(
         AgentRequest(user_id="u1", session_id="trip", message="Plan a trip to Japan")

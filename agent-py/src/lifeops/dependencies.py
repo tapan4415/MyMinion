@@ -1,8 +1,10 @@
 from functools import lru_cache
 
 from lifeops.agent import LifeOpsAgent, OpenAIAgentsAdapter
+from lifeops.agents.buying import BuyingAdvisor
 from lifeops.agents.contact import ContactIntelligenceAgent
 from lifeops.brightdata import BrightDataService, LiveBrightDataService, MockBrightDataService
+from lifeops.buywise import BuywiseClient
 from lifeops.config import get_settings
 from lifeops.knowledge import MossAgentKnowledgeRepository
 from lifeops.memory import MemoryManager
@@ -53,6 +55,9 @@ def get_agent() -> LifeOpsAgent:
         trip_slots=TripSlotService(moss),
         trip_research=TripResearchService(bright_data, moss),
         contact=ContactIntelligenceAgent(bright_data),
+        buying=BuyingAdvisor(BuywiseClient(settings.buywise_api_url))
+        if settings.buywise_api_url and not settings.mock_bright_data
+        else BuyingAdvisor(),
         knowledge=MossAgentKnowledgeRepository(moss),
         conversation=OpenAIAgentsAdapter(settings.openai_model, settings.openai_api_key)
         if settings.openai_api_key
