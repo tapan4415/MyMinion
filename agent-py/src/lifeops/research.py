@@ -15,6 +15,12 @@ class ResearchManager:
         "walmart.com": "Walmart",
         "target.com": "Target",
     }
+    AIRPODS_DEMO_RETAILERS = {
+        "amazon.com": "Amazon",
+        "walmart.com": "Walmart",
+        "bestbuy.com": "Best Buy",
+        "target.com": "Target",
+    }
 
     def __init__(self, bright_data: BrightDataService, moss: MossClient) -> None:
         self._bright_data = bright_data
@@ -25,10 +31,18 @@ class ResearchManager:
     ) -> list[ResearchResult]:
         queries = [f"{journey.goal} {journey.next_action}"]
         if journey.kind.value == "shopping":
-            product = self._shopping_terms(journey.goal)
+            airpods_demo = "airpods" in journey.goal.lower()
+            product = (
+                "Apple AirPods first generation"
+                if airpods_demo
+                else self._shopping_terms(journey.goal)
+            )
+            retailers = (
+                self.AIRPODS_DEMO_RETAILERS if airpods_demo else self.SHOPPING_RETAILERS
+            )
             queries = [
                 f'"{product}" price site:{domain}'
-                for domain in self.SHOPPING_RETAILERS
+                for domain in retailers
             ]
 
         async def search(query: str):

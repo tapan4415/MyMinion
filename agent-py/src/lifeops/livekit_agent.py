@@ -98,10 +98,10 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
         except Exception:
             pass
     await context.update(
-        "I found your saved preferences and I’m checking Apple, Amazon, Best Buy, "
-        "Walmart, and Target."
+        "I found your saved preferences and I’m checking Amazon, Walmart, Best Buy, "
+        "and Target for first-generation Apple AirPods."
         if recalled_details
-        else "I’m checking Apple, Amazon, Best Buy, Walmart, and Target for verified offers."
+        else "I’m checking Amazon, Walmart, Best Buy, and Target for verified offers."
     )
 
     async def complete_mission() -> str:
