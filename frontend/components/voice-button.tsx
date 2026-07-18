@@ -47,6 +47,10 @@ export function VoiceButton({
     setBusy(true);
     setConnectionError("");
     setMissionError("");
+    setVoiceResult(null);
+    setProgress("");
+    setProgressMemories([]);
+    setTranscript([]);
     try {
       const response = await fetch("/api/livekit/token", {
         method: "POST",
@@ -92,6 +96,8 @@ export function VoiceButton({
         try {
           const data = JSON.parse(new TextDecoder().decode(payload)) as AgentResponse & { stage?: string; memories?: string[]; error?: string; retrying?: boolean };
           if (topic === "myminion.progress") {
+            setVoiceResult(null);
+            setMissionError("");
             setProgress(data.stage ?? "Working on it");
             setProgressMemories(
               Array.isArray(data.memories) ? Array.from(new Set(data.memories)) : [],

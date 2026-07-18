@@ -30,7 +30,51 @@ class LiveKitVoiceBridge:
 async def run_lifeops_agent(context: RunContext, request: str) -> str:
     """Plan and research a real-world request using MyMinion's memory and specialist agents."""
     room_name = context.session.room_io.room.name if context.session.room_io else "voice"
-    recalled = await MemoryManager(get_moss()).retrieve("demo-user", request)
+
+    async def publish(topic: str, payload: str) -> None:
+        if not context.session.room_io:
+            return
+        try:
+            await context.session.room_io.room.local_participant.publish_data(
+                payload,
+                reliable=True,
+                topic=topic,
+            )
+        except Exception:
+            pass
+
+    recalled = None
+    moss_error = ""
+    for attempt in range(1, 3):
+        try:
+            recalled = await MemoryManager(get_moss()).retrieve("demo-user", request)
+            break
+        except Exception as error:
+            detail = str(error)
+            moss_error = (
+                "Moss usage limit exceeded (monthly allowance reached)"
+                if "USAGE_LIMIT_EXCEEDED" in detail or "429 Too Many Requests" in detail
+                else f"Moss retrieval failed ({type(error).__name__})"
+            )
+            await publish(
+                "myminion.error",
+                json.dumps(
+                    {
+                        "stage": (
+                            "Retrying the complete mission from Moss retrieval (2/2)"
+                            if attempt == 1
+                            else "Mission stopped after Moss retry failed"
+                        ),
+                        "error": moss_error,
+                        "retrying": attempt == 1,
+                    }
+                ),
+            )
+            if attempt == 1:
+                await asyncio.sleep(1)
+    if recalled is None:
+        return f"I couldn’t continue because {moss_error}."
+
     recalled_details = [
         f"{memory.kind.value.replace('_', ' ')}: {memory.content}" for memory in recalled[:5]
     ]
@@ -61,18 +105,6 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
     )
 
     async def complete_mission() -> str:
-        async def publish(topic: str, payload: str) -> None:
-            if not context.session.room_io:
-                return
-            try:
-                await context.session.room_io.room.local_participant.publish_data(
-                    payload,
-                    reliable=True,
-                    topic=topic,
-                )
-            except Exception:
-                pass
-
         last_error = "No verified priced offers were returned"
         for attempt in range(1, 3):
             if attempt > 1:
