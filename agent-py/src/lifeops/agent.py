@@ -14,6 +14,7 @@ from lifeops.models import (
     InteractionRequest,
     MemoryCandidate,
     MemoryKind,
+    ResearchResult,
     SessionState,
     TripItinerary,
     UseCase,
@@ -72,7 +73,14 @@ class LifeOpsAgent:
         if use_case == UseCase.GENERAL and self._trip_slots.has_pending(session):
             use_case = UseCase.TRIP_PLANNING
         journey = await self._planner.create_journey(request.message)
-        research = await self._research.research_journey(request.user_id, journey)
+        # Trip planning does its own targeted research once slots are complete, and needs
+        # none while still gathering answers - skip the generic call so answering a simple
+        # question ("5 days", "vegetarian") doesn't pay for an unused Bright Data search.
+        research: list[ResearchResult] = (
+            []
+            if use_case == UseCase.TRIP_PLANNING
+            else await self._research.research_journey(request.user_id, journey)
+        )
         recommendations = []
         contact_intelligence = None
         itinerary: TripItinerary | None = None
@@ -86,10 +94,9 @@ class LifeOpsAgent:
                 question = self._trip_slots.next_question(missing)
                 pending_questions = [question] if question else []
             else:
-                trip_evidence = await self._trip_research.research(request.user_id, journey, slots)
-                research = research + trip_evidence
-                recommendations = await self._trip.recommend(journey, trip_evidence, slots)
-                itinerary = await self._trip.build_itinerary(journey, trip_evidence, slots)
+                research = await self._trip_research.research(request.user_id, journey, slots)
+                recommendations = await self._trip.recommend(journey, research, slots)
+                itinerary = await self._trip.build_itinerary(journey, research, slots)
         elif use_case == UseCase.CONTACT_INTELLIGENCE and self._contact:
             contact_intelligence = await self._contact.analyze(
                 InteractionRequest(
