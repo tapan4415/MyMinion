@@ -126,12 +126,8 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
                         message=request,
                     )
                 )
-                incomplete_buying = (
-                    response.use_case == UseCase.BUYING and not response.recommendations
-                )
-                if incomplete_buying and attempt < 2:
-                    last_error = "Approved retailers returned no verified dollar-priced offers"
-                    continue
+                # Flexible: even if no verified priced offers were found, return whatever the
+                # agent gathered (research + a helpful message) instead of erroring/retrying.
                 await publish("myminion.agent_result", response.model_dump_json())
                 return response.message
             except Exception as error:

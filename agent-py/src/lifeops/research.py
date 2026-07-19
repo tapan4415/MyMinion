@@ -93,7 +93,10 @@ class ResearchManager:
                     return None
 
             verified = await asyncio.gather(*(verify(document) for document in documents))
-            documents = [document for document in verified if document is not None]
+            verified_docs = [document for document in verified if document is not None]
+            # Flexible fallback: if none could be price-verified, keep the SERP results so the
+            # agent still returns useful research instead of nothing.
+            documents = verified_docs or documents
         results = [
             ResearchResult(
                 source=doc.url,

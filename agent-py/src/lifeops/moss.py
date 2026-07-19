@@ -138,7 +138,8 @@ class MossCloudIndex(MossIndex[dict[str, Any]]):
                 break
             except Exception:
                 if attempt == 2:
-                    raise
+                    # Best-effort: a persistent Moss write failure must not crash a mission.
+                    return stored
                 await asyncio.sleep(0.5 * (2**attempt))
         self._loaded_indexes.discard(self.remote_name)
         return stored
@@ -153,8 +154,12 @@ class MossCloudIndex(MossIndex[dict[str, Any]]):
         from moss import QueryOptions
 
         if self.remote_name not in self._loaded_indexes:
-            await self._client.load_index(self.remote_name)
-            self._loaded_indexes.add(self.remote_name)
+            try:
+                await self._client.load_index(self.remote_name)
+                self._loaded_indexes.add(self.remote_name)
+            except Exception:
+                # Best-effort: if the index can't be loaded, return no matches rather than crash.
+                return []
         result = None
         for attempt in range(3):
             try:
@@ -166,7 +171,8 @@ class MossCloudIndex(MossIndex[dict[str, Any]]):
                 break
             except Exception:
                 if attempt == 2:
-                    raise
+                    # Best-effort: a persistent Moss read failure returns no matches.
+                    return []
                 await asyncio.sleep(0.5 * (2**attempt))
         if result is None:
             return []
