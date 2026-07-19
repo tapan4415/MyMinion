@@ -98,8 +98,9 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
         except Exception:
             pass
     await context.update(
-        "I found your saved preferences and I’m checking Amazon, Walmart, Best Buy, "
-        "and Target for first-generation Apple AirPods."
+        "I found your saved AirPods preferences and budget. I’m checking current product "
+        "pages at Amazon, Walmart, Best Buy, and Target, while using first-generation as "
+        "a preference rather than excluding available models."
         if recalled_details
         else "I’m checking Amazon, Walmart, Best Buy, and Target for verified offers."
     )
@@ -127,10 +128,25 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
                     )
                 )
                 incomplete_buying = (
-                    response.use_case == UseCase.BUYING and not response.recommendations
+                    response.use_case == UseCase.BUYING
+                    and not {"Amazon", "Walmart", "Best Buy", "Target"}.issubset(
+                        {
+                            str(item.attributes.get("retailer"))
+                            for item in response.recommendations
+                        }
+                    )
                 )
                 if incomplete_buying and attempt < 2:
-                    last_error = "Approved retailers returned no verified dollar-priced offers"
+                    covered = {
+                        str(item.attributes.get("retailer"))
+                        for item in response.recommendations
+                    }
+                    missing = sorted(
+                        {"Amazon", "Walmart", "Best Buy", "Target"} - covered
+                    )
+                    last_error = (
+                        "Missing verified dollar-priced offers from " + ", ".join(missing)
+                    )
                     continue
                 await publish("myminion.agent_result", response.model_dump_json())
                 return response.message
@@ -212,11 +228,29 @@ async def recall_memory(context: RunContext, query: str) -> str:
 
 
 class MyMinionVoiceAgent(Agent):
-    def __init__(self) -> None:
+    def __init__(self, memory_context: str = "") -> None:
+        remembered_context = (
+            "\n\nMoss context loaded before this voice session:\n"
+            f"{memory_context}\n"
+            "Treat this as authoritative user context. If the user asks vaguely what they "
+            "wanted to buy, where they wanted to travel, or to continue a plan, use the "
+            "matching section and most relevant active journey instead of claiming you have "
+            "no information. Do not mix a shopping budget into a trip or a trip budget into "
+            "shopping. Ask only for trip fields that are genuinely absent from Trip planning "
+            "memory."
+            if memory_context
+            else ""
+        )
         super().__init__(
             instructions=(
-                "You are MyMinion, a warm, smart, voice-first personal agent. Talk naturally "
-                "and keep answers concise enough to hear. For buying, travel, relationship "
+                "You are MyMinion, a warm, smart, voice-first personal agent. Perform with an "
+                "original tiny-helper voice: bright, playful, enthusiastic, and slightly higher "
+                "in register, with a quick musical cadence and occasional delighted reactions. "
+                "Stay clearly understandable, never become shrill, never use gibberish, and do "
+                "not imitate any existing movie character or actor. Match the moment: curious "
+                "while listening, focused during research, reassuring on retries, and excited "
+                "when a mission succeeds. Talk naturally and keep answers concise enough to "
+                "hear. For buying, travel, relationship "
                 "intelligence, or other real-world tasks, always call run_lifeops_agent so you "
                 "use current research and long-term memory. Whenever the user asks what you "
                 "know, who a person is, or about their preferences, plans, family, or anything "
@@ -231,6 +265,7 @@ class MyMinionVoiceAgent(Agent):
                 "pace — before an itinerary is ready; that is expected, so keep asking one at a "
                 "time rather than guessing. Speak in English unless the user explicitly requests "
                 "another language. Never say you are a chatbot or scaffold."
+                f"{remembered_context}"
             ),
             tools=[run_lifeops_agent, recall_memory],
             allow_interruptions=True,
@@ -249,6 +284,52 @@ server = AgentServer(
 async def livekit_entrypoint(ctx: JobContext) -> None:
     if not settings.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is required for the voice worker")
+    # Do not rely on the realtime model choosing a memory tool before its first answer.
+    # Preload a small, domain-oriented Moss persona so vague continuation questions work.
+    memory_context = ""
+    try:
+        manager = MemoryManager(get_moss())
+        sections: list[str] = []
+        domains = (
+            (
+                "Shopping memory",
+                (
+                    "active shopping journey what product the user wants to buy",
+                    "product brand model form factor preference earbuds headphones shopping budget",
+                ),
+                False,
+            ),
+            (
+                "Trip planning memory",
+                (
+                    "active travel trip journey destination dates departure lodging food "
+                    "pace budget",
+                    "travel preferences dietary lodging transportation home location companions",
+                ),
+                True,
+            ),
+        )
+        for label, queries, journeys_only in domains:
+            recalled = []
+            seen: set[str] = set()
+            for query in queries:
+                # Take a balanced sample from both intent and preference queries instead of
+                # allowing repeated journeys from the first query to crowd preferences out.
+                for record in await manager.retrieve("demo-user", query, limit=6):
+                    if journeys_only and record.kind.value != "journey":
+                        continue
+                    if record.id not in seen:
+                        seen.add(record.id)
+                        recalled.append(record)
+            if recalled:
+                lines = "\n".join(
+                    f"- {record.kind.value}: {record.content}" for record in recalled[:10]
+                )
+                sections.append(f"{label}:\n{lines}")
+        memory_context = "\n\n".join(sections)
+    except Exception:
+        # The recall_memory tool remains available if startup preloading is unavailable.
+        memory_context = ""
     session = AgentSession(
         llm=openai.realtime.RealtimeModel(
             model="gpt-realtime",
@@ -262,9 +343,13 @@ async def livekit_entrypoint(ctx: JobContext) -> None:
             ),
         )
     )
-    await session.start(room=ctx.room, agent=MyMinionVoiceAgent())
+    await session.start(room=ctx.room, agent=MyMinionVoiceAgent(memory_context))
     await session.generate_reply(
-        instructions="Greet the user briefly and ask what you can take care of."
+        instructions=(
+            "In the bright, playful, slightly high-register MyMinion voice, greet the user "
+            "briefly with cheerful tiny-helper energy and ask what mission you can take care of. "
+            "Keep every word clear and do not imitate an existing character."
+        )
     )
 
 
