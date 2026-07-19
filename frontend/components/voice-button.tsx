@@ -183,9 +183,9 @@ export function VoiceButton({
       <header className="flex h-20 items-center justify-between px-6"><div className="flex items-center gap-3 text-sm font-black"><span className="minion-face size-9"/> {mode === "ambient" ? "Listening mode" : "Voice mission"} <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><span className="size-1.5 animate-pulse rounded-full bg-red-500"/> Scribe listening</span></div><button onClick={() => void toggleVoice()} className="grid size-10 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-50"><X size={18}/></button></header>
       <div className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-8 overflow-y-auto px-6 pb-4 lg:grid-cols-[1fr_380px] lg:items-center">
         <div className="flex flex-col items-center justify-center">
-        <div className={`minion-orb relative size-48 overflow-hidden rounded-full transition-all duration-500 sm:size-56 ${speaker === "agent" ? "opacity-100" : speaker === "user" ? "opacity-90" : "opacity-75"}`}>
-          <span className="sr-only">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening"}</span>
-        </div>
+        <MinionActor
+          state={missionError ? "error" : voiceResult ? "complete" : progress ? "working" : speaker}
+        />
         <p className="mt-8 text-[15px] font-medium text-zinc-600">{speaker === "agent" ? "MyMinion is speaking" : speaker === "user" ? "Listening to you" : "Listening…"}</p>
         <p className="mt-2 text-center text-[11px] text-zinc-400">You can interrupt naturally. Once captured, your mission keeps running.</p>
         {progress && <p className="mt-3 rounded-full bg-indigo-50 px-4 py-2 text-xs text-indigo-600">{progress}</p>}
@@ -209,4 +209,37 @@ export function VoiceButton({
 
 function Metric({ value, label }: { value: number; label: string }) {
   return <div className="rounded-lg bg-zinc-50 p-2 text-center"><p className="text-sm font-black text-[#315fae]">{value}</p><p className="mt-0.5 text-[8px] font-bold uppercase tracking-wide text-zinc-400">{label}</p></div>;
+}
+
+type MinionState = "user" | "agent" | "idle" | "working" | "error" | "complete";
+
+function MinionActor({ state }: { state: MinionState }) {
+  const label = {
+    user: "MyMinion is listening",
+    agent: "MyMinion is speaking",
+    idle: "MyMinion is ready",
+    working: "MyMinion is working",
+    error: "MyMinion is retrying",
+    complete: "MyMinion completed the mission",
+  }[state];
+
+  return <div className={`minion-stage minion-stage--${state}`} role="img" aria-label={label}>
+    <div className="minion-sound-rings" aria-hidden="true"><i/><i/><i/></div>
+    <div className="minion-sparkles" aria-hidden="true"><i>★</i><i>✦</i><i>★</i></div>
+    <div className="minion-character" aria-hidden="true">
+      <span className="minion-hair"><i/><i/><i/></span>
+      <span className="minion-arm minion-arm--left"><i/></span>
+      <span className="minion-arm minion-arm--right"><i/></span>
+      <span className="minion-body">
+        <span className="minion-goggle-band"/>
+        <span className="minion-goggle"><span className="minion-eye"><i/></span></span>
+        <span className="minion-mouth"/>
+        <span className="minion-overalls"><i className="minion-pocket">M</i></span>
+      </span>
+      <span className="minion-leg minion-leg--left"><i/></span>
+      <span className="minion-leg minion-leg--right"><i/></span>
+      <span className="minion-shadow"/>
+    </div>
+    <div className="minion-work-dots" aria-hidden="true"><i/><i/><i/></div>
+  </div>;
 }
