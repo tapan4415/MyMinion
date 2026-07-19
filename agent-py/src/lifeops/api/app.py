@@ -135,6 +135,8 @@ async def moss_inspect(
                     "index": name,
                     "kind": doc.get("kind") or name,
                     "content": content,
+                    "name": doc.get("name"),
+                    "identity": doc.get("identity"),
                     "source": doc.get("source"),
                     "created_at": doc.get("created_at") or doc.get("observed_at"),
                     "id": doc.get("id"),
