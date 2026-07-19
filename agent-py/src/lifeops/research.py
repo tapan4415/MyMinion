@@ -35,7 +35,7 @@ class ResearchManager:
         if journey.kind.value == "shopping":
             airpods_demo = "airpods" in journey.goal.lower()
             product = (
-                "Apple AirPods first generation"
+                "Apple AirPods earbuds"
                 if airpods_demo
                 else self._shopping_terms(journey.goal)
             )
@@ -92,7 +92,38 @@ class ResearchManager:
                 except (BrightDataError, httpx.HTTPError):
                     return None
 
-            verified = await asyncio.gather(*(verify(document) for document in documents))
+            # Browser API plans commonly constrain concurrent sessions. Open candidate
+            # product pages retailer-by-retailer, trying the next SERP result when a page
+            # lacks a price or commerce controls. This guarantees an attempt for every
+            # required retailer instead of letting one retailer consume all verification.
+            retailer_names = list(retailers.values())
+
+            async def verify_retailer(
+                retailer_name: str,
+            ) -> BrightDataDocument | None:
+                candidates = [
+                    document
+                    for document in documents
+                    if self._retailer(document.url) == retailer_name
+                ]
+                for document in candidates:
+                    try:
+                        async with asyncio.timeout(45):
+                            extracted = await verify(document)
+                    except TimeoutError:
+                        extracted = None
+                    if extracted is None:
+                        continue
+                    if extracted.metadata.get("verified_product_page") is not True:
+                        continue
+                    return extracted
+                return None
+
+            # One worker per retailer keeps coverage deterministic without opening every
+            # candidate at once. Each worker falls back to its second candidate sequentially.
+            verified = await asyncio.gather(
+                *(verify_retailer(retailer_name) for retailer_name in retailer_names)
+            )
             documents = [document for document in verified if document is not None]
         results = [
             ResearchResult(

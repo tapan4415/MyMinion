@@ -98,8 +98,9 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
         except Exception:
             pass
     await context.update(
-        "I found your saved preferences and I’m checking Amazon, Walmart, Best Buy, "
-        "and Target for first-generation Apple AirPods."
+        "I found your saved AirPods preferences and budget. I’m checking current product "
+        "pages at Amazon, Walmart, Best Buy, and Target, while using first-generation as "
+        "a preference rather than excluding available models."
         if recalled_details
         else "I’m checking Amazon, Walmart, Best Buy, and Target for verified offers."
     )
@@ -127,10 +128,25 @@ async def run_lifeops_agent(context: RunContext, request: str) -> str:
                     )
                 )
                 incomplete_buying = (
-                    response.use_case == UseCase.BUYING and not response.recommendations
+                    response.use_case == UseCase.BUYING
+                    and not {"Amazon", "Walmart", "Best Buy", "Target"}.issubset(
+                        {
+                            str(item.attributes.get("retailer"))
+                            for item in response.recommendations
+                        }
+                    )
                 )
                 if incomplete_buying and attempt < 2:
-                    last_error = "Approved retailers returned no verified dollar-priced offers"
+                    covered = {
+                        str(item.attributes.get("retailer"))
+                        for item in response.recommendations
+                    }
+                    missing = sorted(
+                        {"Amazon", "Walmart", "Best Buy", "Target"} - covered
+                    )
+                    last_error = (
+                        "Missing verified dollar-priced offers from " + ", ".join(missing)
+                    )
                     continue
                 await publish("myminion.agent_result", response.model_dump_json())
                 return response.message

@@ -22,6 +22,7 @@ class BuyingAdvisor:
         "walmart.com": "Walmart",
         "target.com": "Target",
     }
+    REQUIRED_RETAILERS = {"Amazon", "Walmart", "Best Buy", "Target"}
 
     async def recommend(
         self,
@@ -88,7 +89,10 @@ class BuyingAdvisor:
                     )
                     for index, offer in enumerate(offers[:5])
                 ]
-                if recommendations:
+                covered = {
+                    str(item.attributes.get("retailer")) for item in recommendations
+                }
+                if recommendations and self.REQUIRED_RETAILERS.issubset(covered):
                     return recommendations
             except (httpx.HTTPError, RuntimeError, ValueError):
                 pass
